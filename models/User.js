@@ -22,8 +22,13 @@ const userSchema = new mongoose.Schema(
     },
     role: {
       type: String,
-      enum: ['admin', 'finance_officer', 'member', 'volunteer'],
+      enum: ['admin', 'finance_officer', 'coordinator', 'member', 'volunteer'],
       default: 'member'
+    },
+    assignedWing: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Wing',
+      default: null
     },
     phone: {
       type: String,
@@ -49,6 +54,45 @@ const userSchema = new mongoose.Schema(
       type: String,
       enum: ['active', 'inactive'],
       default: 'active'
+    },
+    photoUrl: {
+      type: String,
+      trim: true,
+      default: '/default-avatar.svg'
+    },
+    blood: {
+      type: String,
+      trim: true,
+      default: ''
+    },
+    upazila: {
+      type: String,
+      trim: true,
+      default: 'ঝালকাঠি সদর'
+    },
+    district: {
+      type: String,
+      trim: true,
+      default: 'ঝালকাঠি'
+    },
+    profession: {
+      type: String,
+      trim: true,
+      default: ''
+    },
+    bio: {
+      type: String,
+      trim: true,
+      default: ''
+    },
+    resetPasswordToken: {
+      type: String,
+      index: true,
+      default: null
+    },
+    resetPasswordExpires: {
+      type: Date,
+      default: null
     }
   },
   {

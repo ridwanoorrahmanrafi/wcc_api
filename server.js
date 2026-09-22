@@ -6,6 +6,11 @@ import authRoutes from './routes/authRoutes.js';
 import memberRoutes from './routes/memberRoutes.js';
 import financeRoutes from './routes/financeRoutes.js';
 import auditRoutes from './routes/auditRoutes.js';
+import wingRoutes from './routes/wingRoutes.js';
+import programRoutes from './routes/programRoutes.js';
+import eventRoutes from './routes/eventRoutes.js';
+import issueRoutes from './routes/issueRoutes.js';
+import statsRoutes from './routes/statsRoutes.js';
 
 // Load environment variables
 dotenv.config();
@@ -44,6 +49,11 @@ app.get('/', (req, res) => {
       members: '/api/members',
       finance: '/api/finance',
       audit: '/api/audit',
+      wings: '/api/wings',
+      programs: '/api/programs',
+      events: '/api/events',
+      issues: '/api/issues',
+      stats: '/api/stats',
       health: '/api/health'
     }
   });
@@ -64,6 +74,11 @@ app.use('/api/auth', authRoutes);
 app.use('/api/members', memberRoutes);
 app.use('/api/finance', financeRoutes);
 app.use('/api/audit', auditRoutes);
+app.use('/api/wings', wingRoutes);
+app.use('/api/programs', programRoutes);
+app.use('/api/events', eventRoutes);
+app.use('/api/issues', issueRoutes);
+app.use('/api/stats', statsRoutes);
 
 // 404 Handler
 app.use((req, res) => {

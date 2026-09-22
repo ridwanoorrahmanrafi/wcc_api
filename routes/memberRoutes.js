@@ -1,5 +1,6 @@
 import express from 'express';
 import { Store } from '../data/store.js';
+import { sendMemberApprovalEmail, isValidEmail } from '../services/emailService.js';
 
 const router = express.Router();
 
@@ -124,6 +125,26 @@ router.patch('/requests/:id', async (req, res, next) => {
       details: `${status.toUpperCase()} ${updated.type} request for ${updated.memberName} (${updated.memberId})`
     });
 
+    // Send email notification for member request approval or rejection
+    if (
+      updated.memberEmail &&
+      isValidEmail(updated.memberEmail) &&
+      (status === 'approved' || status === 'rejected')
+    ) {
+      try {
+        await sendMemberApprovalEmail({
+          to: updated.memberEmail,
+          memberName: updated.memberName || 'Member',
+          memberId: updated.memberId,
+          status,
+          requestType: updated.type,
+          notes: adminNotes
+        });
+      } catch (err) {
+        console.error('[EmailService Error] Failed to send member request notification email:', err.message);
+      }
+    }
+
     res.json(updated);
   } catch (err) {
     next(err);
@@ -211,6 +232,25 @@ router.patch('/:id/status', async (req, res, next) => {
       recordId: updated.memberId,
       details: `Changed status of ${updated.memberId} to ${status}`
     });
+
+    // Send email notification for membership approval (Active) or rejection (Rejected)
+    if (
+      updated.email &&
+      isValidEmail(updated.email) &&
+      (status === 'Active' || status === 'Rejected')
+    ) {
+      try {
+        await sendMemberApprovalEmail({
+          to: updated.email,
+          memberName: updated.nameEn || updated.nameBn || 'Member',
+          memberId: updated.memberId,
+          status: status === 'Active' ? 'approved' : 'rejected',
+          wing: updated.wing
+        });
+      } catch (err) {
+        console.error('[EmailService Error] Failed to send member status update email:', err.message);
+      }
+    }
 
     res.json({
       message: 'Status updated successfully',
