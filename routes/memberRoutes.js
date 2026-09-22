@@ -52,6 +52,84 @@ router.get('/', async (req, res, next) => {
   }
 });
 
+// Member Requests (Wing change or Become Volunteer)
+router.post('/requests', async (req, res, next) => {
+  try {
+    const { userId, memberId, memberName, memberEmail, type, currentWing, requestedWing, volunteerInterests, reason } = req.body;
+    if (!memberId || !type) {
+      return res.status(400).json({ error: 'memberId and request type are required' });
+    }
+
+    const newRequest = await Store.createMemberRequest({
+      userId: userId || req.user?.id,
+      memberId,
+      memberName: memberName || 'Member',
+      memberEmail: memberEmail || '',
+      type,
+      currentWing: currentWing || 'সাধারণ উইং',
+      requestedWing: requestedWing || '',
+      volunteerInterests: volunteerInterests || [],
+      reason: reason || '',
+      status: 'pending'
+    });
+
+    await Store.addAuditLog({
+      action: 'SUBMIT_MEMBER_REQUEST',
+      module: 'Membership',
+      recordId: memberId,
+      details: `Submitted ${type} request for ${memberName} (${memberId})`
+    });
+
+    res.status(201).json(newRequest);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get('/requests', async (req, res, next) => {
+  try {
+    const { type, status, userId, memberId, limit } = req.query;
+    if (userId || memberId) {
+      const myRequests = await Store.getMemberRequestsByUserId(userId, memberId);
+      return res.json(myRequests);
+    }
+    const requests = await Store.getMemberRequests({ type, status, limit });
+    res.json(requests);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.patch('/requests/:id', async (req, res, next) => {
+  try {
+    const { status, adminNotes, reviewedBy } = req.body;
+    if (!['approved', 'rejected', 'pending'].includes(status)) {
+      return res.status(400).json({ error: 'Invalid status' });
+    }
+
+    const updated = await Store.reviewMemberRequest(req.params.id, {
+      status,
+      adminNotes,
+      reviewedBy: reviewedBy || req.user?.name || 'Admin'
+    });
+
+    if (!updated) {
+      return res.status(404).json({ error: 'Request not found' });
+    }
+
+    await Store.addAuditLog({
+      action: status === 'approved' ? 'APPROVE_MEMBER_REQUEST' : 'REJECT_MEMBER_REQUEST',
+      module: 'Membership',
+      recordId: updated.memberId,
+      details: `${status.toUpperCase()} ${updated.type} request for ${updated.memberName} (${updated.memberId})`
+    });
+
+    res.json(updated);
+  } catch (err) {
+    next(err);
+  }
+});
+
 // Get single member details
 router.get('/:id', async (req, res, next) => {
   try {

@@ -122,6 +122,74 @@ router.post('/login', async (req, res, next) => {
   }
 });
 
+// Google OAuth Sign-in & Registration
+router.post('/google', async (req, res, next) => {
+  try {
+    const { email, name, photoUrl } = req.body;
+    if (!email) {
+      return res.status(400).json({ error: 'Email is required for Google authentication' });
+    }
+
+    let user = await Store.findUserByEmail(email);
+
+    if (!user) {
+      // Automatically register new member via Google
+      const autoMemberId = `WCC-2026-${Math.floor(1000 + Math.random() * 9000)}`;
+      const randomPassword = Math.random().toString(36).slice(-12) + 'Wcc!';
+
+      user = await Store.createUser({
+        name: name || email.split('@')[0],
+        email,
+        password: randomPassword,
+        role: 'member',
+        phone: '',
+        memberId: autoMemberId,
+        volunteerWing: 'সাধারণ উইং',
+        volunteerInterests: [],
+        totalHours: 0
+      });
+
+      // Create linked member record in MongoDB
+      await Store.createMember({
+        memberId: autoMemberId,
+        nameEn: name || email.split('@')[0],
+        nameBn: name || email.split('@')[0],
+        mobile: '',
+        email: email,
+        wing: 'সাধারণ উইং',
+        profession: 'General Member',
+        photoUrl: photoUrl || '',
+        status: 'Active',
+        joinedDate: new Date()
+      }).catch((err) => console.error('[Google Member Record Create Notice]', err.message));
+    }
+
+    const token = jwt.sign(
+      { id: user._id, email: user.email, role: user.role, name: user.name },
+      process.env.JWT_SECRET || 'supersecretjwtkey_change_in_production',
+      { expiresIn: '7d' }
+    );
+
+    res.json({
+      message: 'Google authentication successful',
+      token,
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        phone: user.phone || '',
+        memberId: user.memberId || '',
+        volunteerWing: user.volunteerWing || 'সাধারণ উইং',
+        volunteerInterests: user.volunteerInterests || [],
+        totalHours: user.totalHours || 0
+      }
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // Current User profile
 router.get('/me', verifyToken, async (req, res, next) => {
   try {

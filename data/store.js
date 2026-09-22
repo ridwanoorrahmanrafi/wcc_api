@@ -10,6 +10,7 @@ import Reimbursement from '../models/Reimbursement.js';
 import Advance from '../models/Advance.js';
 import Vendor from '../models/Vendor.js';
 import AuditLog from '../models/AuditLog.js';
+import MemberRequest from '../models/MemberRequest.js';
 import bcrypt from 'bcryptjs';
 
 // Empty in-memory fallback cache (used only if MongoDB is offline)
@@ -24,7 +25,8 @@ const memoryStore = {
   reimbursements: [],
   advances: [],
   vendors: [],
-  auditLogs: []
+  auditLogs: [],
+  requests: []
 };
 
 export const Store = {
@@ -77,8 +79,10 @@ export const Store = {
   },
 
   async getMemberById(id) {
+    if (!id) return null;
     if (isDatabaseConnected()) {
-      return await Member.findOne({ $or: [{ memberId: id }, { _id: id.match(/^[0-9a-fA-F]{24}$/) ? id : null }] });
+      const isObjectId = typeof id === 'string' && /^[0-9a-fA-F]{24}$/.test(id);
+      return await Member.findOne(isObjectId ? { $or: [{ memberId: id }, { _id: id }] } : { memberId: id });
     }
     return memoryStore.members.find(m => m.memberId === id || m._id === id) || null;
   },
@@ -98,9 +102,11 @@ export const Store = {
   },
 
   async updateMember(id, data) {
+    if (!id) return null;
     if (isDatabaseConnected()) {
+      const isObjectId = typeof id === 'string' && /^[0-9a-fA-F]{24}$/.test(id);
       return await Member.findOneAndUpdate(
-        { $or: [{ memberId: id }, { _id: id.match(/^[0-9a-fA-F]{24}$/) ? id : null }] },
+        isObjectId ? { $or: [{ memberId: id }, { _id: id }] } : { memberId: id },
         data,
         { new: true }
       );
@@ -114,8 +120,10 @@ export const Store = {
   },
 
   async deleteMember(id) {
+    if (!id) return null;
     if (isDatabaseConnected()) {
-      return await Member.findOneAndDelete({ $or: [{ memberId: id }, { _id: id.match(/^[0-9a-fA-F]{24}$/) ? id : null }] });
+      const isObjectId = typeof id === 'string' && /^[0-9a-fA-F]{24}$/.test(id);
+      return await Member.findOneAndDelete(isObjectId ? { $or: [{ memberId: id }, { _id: id }] } : { memberId: id });
     }
     const idx = memoryStore.members.findIndex(m => m.memberId === id || m._id === id);
     if (idx !== -1) {
@@ -516,5 +524,91 @@ export const Store = {
     }
     memoryStore.auditLogs.unshift(logData);
     return logData;
+  },
+
+  // Member Requests (Wing Change & Become Volunteer)
+  async createMemberRequest(data) {
+    if (isDatabaseConnected()) {
+      return await MemberRequest.create(data);
+    }
+    const newReq = { ...data, _id: 'req_' + Date.now(), createdAt: new Date() };
+    memoryStore.requests.unshift(newReq);
+    return newReq;
+  },
+
+  async getMemberRequests({ type, status, limit = 50 } = {}) {
+    if (isDatabaseConnected()) {
+      const query = {};
+      if (type && type !== 'All') query.type = type;
+      if (status && status !== 'All') query.status = status;
+      return await MemberRequest.find(query).sort({ createdAt: -1 }).limit(Number(limit));
+    }
+    return memoryStore.requests.filter(r => {
+      if (type && type !== 'All' && r.type !== type) return false;
+      if (status && status !== 'All' && r.status !== status) return false;
+      return true;
+    }).slice(0, Number(limit));
+  },
+
+  async getMemberRequestsByUserId(userId, memberId) {
+    if (isDatabaseConnected()) {
+      const orClauses = [];
+      if (userId) orClauses.push({ userId });
+      if (memberId) orClauses.push({ memberId });
+      const query = orClauses.length > 0 ? { $or: orClauses } : {};
+      return await MemberRequest.find(query).sort({ createdAt: -1 });
+    }
+    return memoryStore.requests.filter(r => 
+      (userId && String(r.userId) === String(userId)) || 
+      (memberId && String(r.memberId) === String(memberId))
+    );
+  },
+
+  async reviewMemberRequest(id, { status, adminNotes = '', reviewedBy = 'Admin' }) {
+    if (isDatabaseConnected()) {
+      const req = await MemberRequest.findById(id);
+      if (!req) return null;
+
+      req.status = status;
+      req.adminNotes = adminNotes;
+      req.reviewedBy = reviewedBy;
+      req.reviewedAt = new Date();
+      await req.save();
+
+      // If approved, update member and user records in MongoDB
+      if (status === 'approved') {
+        const memberQuery = req.memberId ? { memberId: req.memberId } : (req.memberEmail ? { email: req.memberEmail } : null);
+        const userQuery = req.userId ? { _id: req.userId } : (req.memberId ? { memberId: req.memberId } : (req.memberEmail ? { email: req.memberEmail } : null));
+
+        if (req.type === 'wing_change' && req.requestedWing) {
+          if (memberQuery) await Member.findOneAndUpdate(memberQuery, { wing: req.requestedWing });
+          if (userQuery) await User.findOneAndUpdate(userQuery, { volunteerWing: req.requestedWing });
+        } else if (req.type === 'become_volunteer') {
+          if (userQuery) {
+            await User.findOneAndUpdate(
+              userQuery,
+              {
+                role: 'volunteer',
+                volunteerWing: req.requestedWing || req.currentWing || 'সাধারণ উইং',
+                volunteerInterests: req.volunteerInterests || []
+              }
+            );
+          }
+          if (memberQuery) await Member.findOneAndUpdate(memberQuery, { profession: 'Youth Volunteer' });
+        }
+      }
+
+      return req;
+    }
+
+    const idx = memoryStore.requests.findIndex(r => String(r._id) === String(id));
+    if (idx !== -1) {
+      memoryStore.requests[idx].status = status;
+      memoryStore.requests[idx].adminNotes = adminNotes;
+      memoryStore.requests[idx].reviewedBy = reviewedBy;
+      memoryStore.requests[idx].reviewedAt = new Date();
+      return memoryStore.requests[idx];
+    }
+    return null;
   }
 };

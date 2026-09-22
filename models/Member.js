@@ -42,7 +42,7 @@ const memberSchema = new mongoose.Schema(
     },
     mobile: {
       type: String,
-      required: true,
+      default: '',
       trim: true
     },
     email: {
