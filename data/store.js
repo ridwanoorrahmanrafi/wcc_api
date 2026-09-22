@@ -36,122 +36,10 @@ const memoryStore = {
   programs: [],
   events: [],
   issues: [],
-  issueCounter: 0,
-  registrations: []
+  eventRegistrations: []
 };
 
 export const Store = {
-  // Wings, Programs, and Events
-  async getWings() {
-    if (isDatabaseConnected()) return await Wing.find({}).sort({ nameEn: 1 });
-    return memoryStore.wings;
-  },
-
-  async getWingBySlug(slug) {
-    if (isDatabaseConnected()) return await Wing.findOne({ slug: String(slug).toLowerCase() });
-    return memoryStore.wings.find(wing => wing.slug === String(slug).toLowerCase()) || null;
-  },
-
-  async getWingById(id) {
-    if (!id) return null;
-    if (isDatabaseConnected()) return await Wing.findById(id);
-    return memoryStore.wings.find(wing => String(wing._id) === String(id)) || null;
-  },
-
-  async createWing(data) {
-    if (isDatabaseConnected()) return await Wing.create(data);
-    const wing = { ...data, slug: String(data.slug).toLowerCase(), _id: `wing_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`, createdAt: new Date(), updatedAt: new Date() };
-    memoryStore.wings.push(wing);
-    return wing;
-  },
-
-  async updateWing(id, data) {
-    if (isDatabaseConnected()) return await Wing.findByIdAndUpdate(id, data, { new: true, runValidators: true });
-    const wing = await this.getWingById(id);
-    if (!wing) return null;
-    Object.assign(wing, data, data.slug ? { slug: String(data.slug).toLowerCase() } : {}, { updatedAt: new Date() });
-    return wing;
-  },
-
-  async deleteWing(id) {
-    if (isDatabaseConnected()) return await Wing.findByIdAndDelete(id);
-    const index = memoryStore.wings.findIndex(wing => String(wing._id) === String(id));
-    return index === -1 ? null : memoryStore.wings.splice(index, 1)[0];
-  },
-
-  async getPrograms({ wingId, publicOnly = false } = {}) {
-    if (isDatabaseConnected()) {
-      const query = {};
-      if (wingId) query.wingId = wingId;
-      if (publicOnly) query.status = 'published';
-      return await Program.find(query).populate('wingId').sort({ startDate: 1, createdAt: -1 });
-    }
-    return memoryStore.programs.filter(program => (!wingId || String(program.wingId) === String(wingId)) && (!publicOnly || program.status === 'published'));
-  },
-
-  async getProgramById(id) {
-    if (isDatabaseConnected()) return await Program.findById(id).populate('wingId');
-    return memoryStore.programs.find(program => String(program._id) === String(id)) || null;
-  },
-
-  async createProgram(data) {
-    if (isDatabaseConnected()) return await Program.create(data);
-    const program = { ...data, _id: `program_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`, createdAt: new Date(), updatedAt: new Date() };
-    memoryStore.programs.push(program);
-    return program;
-  },
-
-  async updateProgram(id, data) {
-    if (isDatabaseConnected()) return await Program.findByIdAndUpdate(id, data, { new: true, runValidators: true });
-    const program = await this.getProgramById(id);
-    if (!program) return null;
-    Object.assign(program, data, { updatedAt: new Date() });
-    return program;
-  },
-
-  async deleteProgram(id) {
-    if (isDatabaseConnected()) return await Program.findByIdAndDelete(id);
-    const index = memoryStore.programs.findIndex(program => String(program._id) === String(id));
-    return index === -1 ? null : memoryStore.programs.splice(index, 1)[0];
-  },
-
-  async getEvents({ wingId, programId, publicOnly = false } = {}) {
-    if (isDatabaseConnected()) {
-      const query = {};
-      if (wingId) query.wingId = wingId;
-      if (programId) query.programId = programId;
-      if (publicOnly) query.status = 'published';
-      return await Event.find(query).populate('wingId programId').sort({ date: 1 });
-    }
-    return memoryStore.events.filter(event => (!wingId || String(event.wingId) === String(wingId)) && (!programId || String(event.programId) === String(programId)) && (!publicOnly || event.status === 'published'));
-  },
-
-  async getEventById(id) {
-    if (isDatabaseConnected()) return await Event.findById(id).populate('wingId programId');
-    return memoryStore.events.find(event => String(event._id) === String(id)) || null;
-  },
-
-  async createEvent(data) {
-    if (isDatabaseConnected()) return await Event.create(data);
-    const event = { ...data, _id: `event_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`, createdAt: new Date(), updatedAt: new Date() };
-    memoryStore.events.push(event);
-    return event;
-  },
-
-  async updateEvent(id, data) {
-    if (isDatabaseConnected()) return await Event.findByIdAndUpdate(id, data, { new: true, runValidators: true });
-    const event = await this.getEventById(id);
-    if (!event) return null;
-    Object.assign(event, data, { updatedAt: new Date() });
-    return event;
-  },
-
-  async deleteEvent(id) {
-    if (isDatabaseConnected()) return await Event.findByIdAndDelete(id);
-    const index = memoryStore.events.findIndex(event => String(event._id) === String(id));
-    return index === -1 ? null : memoryStore.events.splice(index, 1)[0];
-  },
-
   // Members
   async getMembers({ search, wing, blood, status, profession, page = 1, limit = 50 }) {
     if (isDatabaseConnected()) {
@@ -600,9 +488,120 @@ export const Store = {
   // Users & Auth
   async findUserByEmail(email) {
     if (isDatabaseConnected()) {
-      return await User.findOne({ email: email.toLowerCase() });
+      return await User.findOne({ email: email.toLowerCase() }).populate('assignedWing');
     }
     return memoryStore.users.find(u => u.email.toLowerCase() === email.toLowerCase());
+  },
+
+  async getUserById(id) {
+    if (isDatabaseConnected()) {
+      return await User.findById(id).populate('assignedWing');
+    }
+    return memoryStore.users.find(u => String(u._id) === String(id));
+  },
+
+  async getUsers({ role, search } = {}) {
+    if (isDatabaseConnected()) {
+      const query = {};
+      if (role && role !== 'all') {
+        query.role = role;
+      }
+      if (search && search.trim()) {
+        const regex = { $regex: search.trim(), $options: 'i' };
+        query.$or = [{ name: regex }, { email: regex }, { phone: regex }, { memberId: regex }];
+      }
+      return await User.find(query).populate('assignedWing').sort({ createdAt: -1 });
+    }
+    let list = [...memoryStore.users];
+    if (role && role !== 'all') {
+      list = list.filter(u => u.role === role);
+    }
+    if (search && search.trim()) {
+      const q = search.trim().toLowerCase();
+      list = list.filter(u =>
+        u.name?.toLowerCase().includes(q) ||
+        u.email?.toLowerCase().includes(q) ||
+        u.memberId?.toLowerCase().includes(q)
+      );
+    }
+    return list;
+  },
+
+  async findUserByResetToken(token) {
+    if (!token) return null;
+    if (isDatabaseConnected()) {
+      return await User.findOne({
+        resetPasswordToken: token,
+        resetPasswordExpires: { $gt: new Date() }
+      }).populate('assignedWing');
+    }
+    return memoryStore.users.find(
+      u => u.resetPasswordToken === token && u.resetPasswordExpires && new Date(u.resetPasswordExpires) > new Date()
+    ) || null;
+  },
+
+  async updateUserPassword(id, newPassword) {
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(newPassword, salt);
+    if (isDatabaseConnected()) {
+      return await User.findByIdAndUpdate(
+        id,
+        {
+          $set: {
+            password: hashedPassword,
+            resetPasswordToken: null,
+            resetPasswordExpires: null
+          }
+        },
+        { new: true }
+      ).populate('assignedWing');
+    }
+    const idx = memoryStore.users.findIndex(u => String(u._id) === String(id));
+    if (idx === -1) return null;
+    memoryStore.users[idx] = {
+      ...memoryStore.users[idx],
+      password: hashedPassword,
+      resetPasswordToken: null,
+      resetPasswordExpires: null,
+      updatedAt: new Date()
+    };
+    return memoryStore.users[idx];
+  },
+
+  async updateUser(id, updateData) {
+    let updated;
+    if (isDatabaseConnected()) {
+      updated = await User.findByIdAndUpdate(id, { $set: updateData }, { new: true, runValidators: true }).populate('assignedWing');
+    } else {
+      const idx = memoryStore.users.findIndex(u => String(u._id) === String(id));
+      if (idx !== -1) {
+        memoryStore.users[idx] = { ...memoryStore.users[idx], ...updateData, updatedAt: new Date() };
+        updated = memoryStore.users[idx];
+      }
+    }
+
+    // Sync profile updates to linked Member record if applicable
+    if (updated && updated.memberId) {
+      const memberFields = {};
+      if (updateData.name) {
+        memberFields.nameEn = updateData.name;
+        memberFields.nameBn = updateData.name;
+      }
+      if (updateData.phone !== undefined) memberFields.mobile = updateData.phone;
+      if (updateData.blood !== undefined) memberFields.blood = updateData.blood;
+      if (updateData.upazila !== undefined) memberFields.upazila = updateData.upazila;
+      if (updateData.district !== undefined) memberFields.district = updateData.district;
+      if (updateData.profession !== undefined) memberFields.profession = updateData.profession;
+      if (updateData.photoUrl !== undefined) memberFields.photoUrl = updateData.photoUrl;
+
+      if (Object.keys(memberFields).length > 0) {
+        await this.updateMember(updated.memberId, memberFields).catch(err => {
+          console.warn('[Member Sync Notice] Could not sync member record:', err.message);
+        });
+      }
+    }
+
+    return updated;
   },
 
   async createUser(userData) {
@@ -615,7 +614,8 @@ export const Store = {
     };
 
     if (isDatabaseConnected()) {
-      return await User.create(newUser);
+      const created = await User.create(newUser);
+      return await User.findById(created._id).populate('assignedWing');
     }
     const created = { ...newUser, _id: 'usr_' + Date.now() };
     memoryStore.users.push(created);
@@ -734,140 +734,680 @@ export const Store = {
     return null;
   },
 
-  // ─── Issues ────────────────────────────────────────────────────────────────
-  async generateIssueCode() {
-    const year = new Date().getFullYear();
+  // Wings
+  async getWings() {
     if (isDatabaseConnected()) {
-      const count = await Issue.countDocuments();
-      return `WCC-ISSUE-${year}-${String(count + 1).padStart(4, '0')}`;
+      return await Wing.find({}).sort({ createdAt: 1 });
     }
-    memoryStore.issueCounter += 1;
-    return `WCC-ISSUE-${year}-${String(memoryStore.issueCounter).padStart(4, '0')}`;
+    return [...memoryStore.wings].sort((a, b) => new Date(a.createdAt || 0) - new Date(b.createdAt || 0));
   },
 
-  async getIssues({ status, wingId, limit = 100 } = {}) {
+  async getWingBySlug(slug) {
+    if (!slug) return null;
+    const cleanSlug = String(slug).trim().toLowerCase();
+    if (isDatabaseConnected()) {
+      return await Wing.findOne({ slug: cleanSlug });
+    }
+    return memoryStore.wings.find(w => w.slug.toLowerCase() === cleanSlug) || null;
+  },
+
+  async getWingById(id) {
+    if (!id) return null;
+    if (isDatabaseConnected()) {
+      const isObjectId = typeof id === 'string' && /^[0-9a-fA-F]{24}$/.test(id);
+      return isObjectId ? await Wing.findById(id) : null;
+    }
+    return memoryStore.wings.find(w => String(w._id) === String(id)) || null;
+  },
+
+  async findWingBySlug(slug, excludeId = null) {
+    if (!slug) return null;
+    const cleanSlug = String(slug).trim().toLowerCase();
+    if (isDatabaseConnected()) {
+      const query = { slug: cleanSlug };
+      if (excludeId) {
+        query._id = { $ne: excludeId };
+      }
+      return await Wing.findOne(query);
+    }
+    return memoryStore.wings.find(w => w.slug.toLowerCase() === cleanSlug && String(w._id) !== String(excludeId)) || null;
+  },
+
+  async createWing(data) {
+    if (isDatabaseConnected()) {
+      return await Wing.create(data);
+    }
+    const newWing = {
+      _id: 'wing_' + Date.now(),
+      nameEn: data.nameEn,
+      nameBn: data.nameBn,
+      slug: data.slug.toLowerCase(),
+      description: data.description || '',
+      missionPoints: Array.isArray(data.missionPoints) ? data.missionPoints : [],
+      coverImage: data.coverImage || '',
+      createdAt: new Date(),
+      updatedAt: new Date()
+    };
+    memoryStore.wings.push(newWing);
+    return newWing;
+  },
+
+  async updateWing(id, data) {
+    if (!id) return null;
+    if (isDatabaseConnected()) {
+      const isObjectId = typeof id === 'string' && /^[0-9a-fA-F]{24}$/.test(id);
+      return isObjectId ? await Wing.findByIdAndUpdate(id, data, { new: true, runValidators: true }) : null;
+    }
+    const idx = memoryStore.wings.findIndex(w => String(w._id) === String(id));
+    if (idx !== -1) {
+      memoryStore.wings[idx] = { ...memoryStore.wings[idx], ...data, updatedAt: new Date() };
+      return memoryStore.wings[idx];
+    }
+    return null;
+  },
+
+  async deleteWing(id) {
+    if (!id) return null;
+    if (isDatabaseConnected()) {
+      const isObjectId = typeof id === 'string' && /^[0-9a-fA-F]{24}$/.test(id);
+      return isObjectId ? await Wing.findByIdAndDelete(id) : null;
+    }
+    const idx = memoryStore.wings.findIndex(w => String(w._id) === String(id));
+    if (idx !== -1) {
+      const removed = memoryStore.wings.splice(idx, 1);
+      return removed[0];
+    }
+    return null;
+  },
+
+  // Programs
+  async getPrograms({ wingId, status } = {}) {
     if (isDatabaseConnected()) {
       const query = {};
-      if (status && status !== 'All') query.status = status;
-      if (wingId) query.wingId = wingId;
-      return await Issue.find(query).sort({ createdAt: -1 }).limit(Number(limit));
+      if (wingId && wingId !== 'All') {
+        query.wingId = wingId;
+      }
+      if (status && status !== 'All') {
+        query.status = status.toLowerCase();
+      }
+      return await Program.find(query)
+        .populate('wingId', 'nameEn nameBn slug coverImage')
+        .sort({ startDate: -1, createdAt: -1 });
     }
-    return memoryStore.issues.filter(i =>
-      (!status || status === 'All' || i.status === status) &&
-      (!wingId || i.wingId === wingId)
-    ).slice(0, Number(limit));
+
+    let list = [...memoryStore.programs];
+    if (wingId && wingId !== 'All') {
+      list = list.filter(p => String(p.wingId?._id || p.wingId) === String(wingId));
+    }
+    if (status && status !== 'All') {
+      list = list.filter(p => p.status?.toLowerCase() === status.toLowerCase());
+    }
+
+    return list.map(p => {
+      const wing = memoryStore.wings.find(w => String(w._id) === String(p.wingId?._id || p.wingId));
+      return {
+        ...p,
+        wingId: wing
+          ? { _id: wing._id, nameEn: wing.nameEn, nameBn: wing.nameBn, slug: wing.slug, coverImage: wing.coverImage }
+          : p.wingId
+      };
+    }).sort((a, b) => new Date(b.startDate || b.createdAt || 0) - new Date(a.startDate || a.createdAt || 0));
+  },
+
+  async getProgramById(id) {
+    if (!id) return null;
+    if (isDatabaseConnected()) {
+      const isObjectId = typeof id === 'string' && /^[0-9a-fA-F]{24}$/.test(id);
+      return isObjectId ? await Program.findById(id).populate('wingId', 'nameEn nameBn slug coverImage') : null;
+    }
+    const program = memoryStore.programs.find(p => String(p._id) === String(id));
+    if (!program) return null;
+    const wing = memoryStore.wings.find(w => String(w._id) === String(program.wingId?._id || program.wingId));
+    return {
+      ...program,
+      wingId: wing
+        ? { _id: wing._id, nameEn: wing.nameEn, nameBn: wing.nameBn, slug: wing.slug, coverImage: wing.coverImage }
+        : program.wingId
+    };
+  },
+
+  async createProgram(data) {
+    if (isDatabaseConnected()) {
+      const created = await Program.create(data);
+      return await Program.findById(created._id).populate('wingId', 'nameEn nameBn slug coverImage');
+    }
+    const wing = memoryStore.wings.find(w => String(w._id) === String(data.wingId));
+    const newProg = {
+      _id: 'prog_' + Date.now(),
+      title: data.title,
+      wingId: wing ? { _id: wing._id, nameEn: wing.nameEn, nameBn: wing.nameBn, slug: wing.slug, coverImage: wing.coverImage } : data.wingId,
+      description: data.description || '',
+      startDate: data.startDate ? new Date(data.startDate) : null,
+      endDate: data.endDate ? new Date(data.endDate) : null,
+      status: data.status ? data.status.toLowerCase() : 'draft',
+      coverImage: data.coverImage || '',
+      createdAt: new Date(),
+      updatedAt: new Date()
+    };
+    memoryStore.programs.unshift(newProg);
+    return newProg;
+  },
+
+  async updateProgram(id, data) {
+    if (!id) return null;
+    if (isDatabaseConnected()) {
+      const isObjectId = typeof id === 'string' && /^[0-9a-fA-F]{24}$/.test(id);
+      return isObjectId
+        ? await Program.findByIdAndUpdate(id, data, { new: true, runValidators: true }).populate('wingId', 'nameEn nameBn slug coverImage')
+        : null;
+    }
+    const idx = memoryStore.programs.findIndex(p => String(p._id) === String(id));
+    if (idx !== -1) {
+      let wingInfo = memoryStore.programs[idx].wingId;
+      if (data.wingId) {
+        const wing = memoryStore.wings.find(w => String(w._id) === String(data.wingId));
+        wingInfo = wing ? { _id: wing._id, nameEn: wing.nameEn, nameBn: wing.nameBn, slug: wing.slug, coverImage: wing.coverImage } : data.wingId;
+      }
+      memoryStore.programs[idx] = {
+        ...memoryStore.programs[idx],
+        ...data,
+        wingId: wingInfo,
+        updatedAt: new Date()
+      };
+      return memoryStore.programs[idx];
+    }
+    return null;
+  },
+
+  async deleteProgram(id) {
+    if (!id) return null;
+    if (isDatabaseConnected()) {
+      const isObjectId = typeof id === 'string' && /^[0-9a-fA-F]{24}$/.test(id);
+      return isObjectId ? await Program.findByIdAndDelete(id) : null;
+    }
+    const idx = memoryStore.programs.findIndex(p => String(p._id) === String(id));
+    if (idx !== -1) {
+      const removed = memoryStore.programs.splice(idx, 1);
+      return removed[0];
+    }
+    return null;
+  },
+
+  // Events
+  async getEvents({ wingId, programId, status, isPublic = true } = {}) {
+    if (isDatabaseConnected()) {
+      const query = {};
+      if (wingId && wingId !== 'All') query.wingId = wingId;
+      if (programId && programId !== 'All') query.programId = programId;
+      if (status && status !== 'All') {
+        query.status = status.toLowerCase();
+      } else if (isPublic) {
+        query.status = 'published';
+      }
+
+      return await Event.find(query)
+        .populate('wingId', 'nameEn nameBn slug coverImage')
+        .populate('programId', 'title status coverImage')
+        .sort({ date: 1, createdAt: -1 });
+    }
+
+    let list = [...memoryStore.events];
+    if (wingId && wingId !== 'All') {
+      list = list.filter(e => String(e.wingId?._id || e.wingId) === String(wingId));
+    }
+    if (programId && programId !== 'All') {
+      list = list.filter(e => String(e.programId?._id || e.programId) === String(programId));
+    }
+    if (status && status !== 'All') {
+      list = list.filter(e => e.status?.toLowerCase() === status.toLowerCase());
+    } else if (isPublic) {
+      list = list.filter(e => e.status === 'published');
+    }
+
+    return list.map(e => {
+      const wing = memoryStore.wings.find(w => String(w._id) === String(e.wingId?._id || e.wingId));
+      const prog = memoryStore.programs.find(p => String(p._id) === String(e.programId?._id || e.programId));
+      return {
+        ...e,
+        wingId: wing ? { _id: wing._id, nameEn: wing.nameEn, nameBn: wing.nameBn, slug: wing.slug, coverImage: wing.coverImage } : e.wingId,
+        programId: prog ? { _id: prog._id, title: prog.title, status: prog.status, coverImage: prog.coverImage } : e.programId
+      };
+    }).sort((a, b) => new Date(a.date || 0) - new Date(b.date || 0));
+  },
+
+  async getEventById(id) {
+    if (!id) return null;
+    if (isDatabaseConnected()) {
+      const isObjectId = typeof id === 'string' && /^[0-9a-fA-F]{24}$/.test(id);
+      return isObjectId
+        ? await Event.findById(id)
+            .populate('wingId', 'nameEn nameBn slug coverImage')
+            .populate('programId', 'title status coverImage')
+        : null;
+    }
+    const e = memoryStore.events.find(ev => String(ev._id) === String(id));
+    if (!e) return null;
+    const wing = memoryStore.wings.find(w => String(w._id) === String(e.wingId?._id || e.wingId));
+    const prog = memoryStore.programs.find(p => String(p._id) === String(e.programId?._id || e.programId));
+    return {
+      ...e,
+      wingId: wing ? { _id: wing._id, nameEn: wing.nameEn, nameBn: wing.nameBn, slug: wing.slug, coverImage: wing.coverImage } : e.wingId,
+      programId: prog ? { _id: prog._id, title: prog.title, status: prog.status, coverImage: prog.coverImage } : e.programId
+    };
+  },
+
+  async createEvent(data) {
+    if (isDatabaseConnected()) {
+      const created = await Event.create(data);
+      return await Event.findById(created._id)
+        .populate('wingId', 'nameEn nameBn slug coverImage')
+        .populate('programId', 'title status coverImage');
+    }
+    const wing = memoryStore.wings.find(w => String(w._id) === String(data.wingId));
+    const prog = data.programId ? memoryStore.programs.find(p => String(p._id) === String(data.programId)) : null;
+
+    const newEvent = {
+      _id: 'evt_' + Date.now(),
+      title: data.title,
+      wingId: wing ? { _id: wing._id, nameEn: wing.nameEn, nameBn: wing.nameBn, slug: wing.slug, coverImage: wing.coverImage } : data.wingId,
+      programId: prog ? { _id: prog._id, title: prog.title, status: prog.status, coverImage: prog.coverImage } : (data.programId || null),
+      date: new Date(data.date),
+      location: data.location,
+      capacity: data.capacity ? Number(data.capacity) : null,
+      description: data.description || '',
+      coverImage: data.coverImage || '',
+      status: data.status ? data.status.toLowerCase() : 'draft',
+      createdBy: data.createdBy || null,
+      createdAt: new Date(),
+      updatedAt: new Date()
+    };
+    memoryStore.events.unshift(newEvent);
+    return newEvent;
+  },
+
+  async updateEvent(id, data) {
+    if (!id) return null;
+    if (isDatabaseConnected()) {
+      const isObjectId = typeof id === 'string' && /^[0-9a-fA-F]{24}$/.test(id);
+      return isObjectId
+        ? await Event.findByIdAndUpdate(id, data, { new: true, runValidators: true })
+            .populate('wingId', 'nameEn nameBn slug coverImage')
+            .populate('programId', 'title status coverImage')
+        : null;
+    }
+    const idx = memoryStore.events.findIndex(e => String(e._id) === String(id));
+    if (idx !== -1) {
+      let wingInfo = memoryStore.events[idx].wingId;
+      if (data.wingId) {
+        const wing = memoryStore.wings.find(w => String(w._id) === String(data.wingId));
+        wingInfo = wing ? { _id: wing._id, nameEn: wing.nameEn, nameBn: wing.nameBn, slug: wing.slug, coverImage: wing.coverImage } : data.wingId;
+      }
+      let progInfo = memoryStore.events[idx].programId;
+      if (data.programId !== undefined) {
+        if (data.programId) {
+          const prog = memoryStore.programs.find(p => String(p._id) === String(data.programId));
+          progInfo = prog ? { _id: prog._id, title: prog.title, status: prog.status, coverImage: prog.coverImage } : data.programId;
+        } else {
+          progInfo = null;
+        }
+      }
+
+      memoryStore.events[idx] = {
+        ...memoryStore.events[idx],
+        ...data,
+        wingId: wingInfo,
+        programId: progInfo,
+        updatedAt: new Date()
+      };
+      return memoryStore.events[idx];
+    }
+    return null;
+  },
+
+  async deleteEvent(id) {
+    if (!id) return null;
+    if (isDatabaseConnected()) {
+      const isObjectId = typeof id === 'string' && /^[0-9a-fA-F]{24}$/.test(id);
+      return isObjectId ? await Event.findByIdAndDelete(id) : null;
+    }
+    const idx = memoryStore.events.findIndex(e => String(e._id) === String(id));
+    if (idx !== -1) {
+      const removed = memoryStore.events.splice(idx, 1);
+      return removed[0];
+    }
+    return null;
+  },
+
+  // Issues (Community Issue Reporting)
+  async createIssue(data) {
+    if (isDatabaseConnected()) {
+      const created = await Issue.create(data);
+      return await Issue.findById(created._id)
+        .populate('assignedTo', 'name email role phone')
+        .populate('wingId', 'nameEn nameBn slug');
+    }
+    const assignedUser = data.assignedTo
+      ? memoryStore.users.find(u => String(u._id) === String(data.assignedTo))
+      : null;
+    const wing = data.wingId
+      ? memoryStore.wings.find(w => String(w._id) === String(data.wingId))
+      : null;
+
+    const newIssue = {
+      _id: 'iss_' + Date.now(),
+      issueCode: data.issueCode,
+      title: data.title,
+      description: data.description,
+      location: data.location,
+      photoUrl: data.photoUrl || '',
+      status: (data.status || 'pending').toLowerCase(),
+      reporterName: data.reporterName,
+      reporterContact: data.reporterContact,
+      assignedTo: assignedUser ? { _id: assignedUser._id, name: assignedUser.name, email: assignedUser.email, role: assignedUser.role, phone: assignedUser.phone } : null,
+      wingId: wing ? { _id: wing._id, nameEn: wing.nameEn, nameBn: wing.nameBn, slug: wing.slug } : null,
+      createdAt: new Date(),
+      updatedAt: new Date()
+    };
+    memoryStore.issues.unshift(newIssue);
+    return newIssue;
+  },
+
+  async getIssues({ status, assignedTo, wingId, search, page = 1, limit = 50 } = {}) {
+    if (isDatabaseConnected()) {
+      const query = {};
+      if (status && status !== 'All') query.status = status.toLowerCase();
+      if (assignedTo && assignedTo !== 'All') query.assignedTo = assignedTo;
+      if (wingId && wingId !== 'All') query.wingId = wingId;
+      if (search) {
+        query.$or = [
+          { issueCode: { $regex: search, $options: 'i' } },
+          { title: { $regex: search, $options: 'i' } },
+          { location: { $regex: search, $options: 'i' } },
+          { reporterName: { $regex: search, $options: 'i' } }
+        ];
+      }
+      const skip = (Number(page) - 1) * Number(limit);
+      const total = await Issue.countDocuments(query);
+      const issues = await Issue.find(query)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(Number(limit))
+        .populate('assignedTo', 'name email role phone')
+        .populate('wingId', 'nameEn nameBn slug');
+      return { total, page: Number(page), limit: Number(limit), issues };
+    }
+
+    let list = [...memoryStore.issues];
+    if (status && status !== 'All') {
+      list = list.filter(i => i.status === status.toLowerCase());
+    }
+    if (assignedTo && assignedTo !== 'All') {
+      list = list.filter(i => {
+        const aId = i.assignedTo?._id || i.assignedTo;
+        return String(aId) === String(assignedTo);
+      });
+    }
+    if (wingId && wingId !== 'All') {
+      list = list.filter(i => {
+        const wId = i.wingId?._id || i.wingId;
+        return String(wId) === String(wingId);
+      });
+    }
+    if (search) {
+      const s = search.toLowerCase();
+      list = list.filter(
+        i =>
+          (i.issueCode && i.issueCode.toLowerCase().includes(s)) ||
+          (i.title && i.title.toLowerCase().includes(s)) ||
+          (i.location && i.location.toLowerCase().includes(s)) ||
+          (i.reporterName && i.reporterName.toLowerCase().includes(s))
+      );
+    }
+    list.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    const skip = (Number(page) - 1) * Number(limit);
+    const paginated = list.slice(skip, skip + Number(limit));
+    return {
+      total: list.length,
+      page: Number(page),
+      limit: Number(limit),
+      issues: paginated
+    };
   },
 
   async getIssueById(id) {
     if (!id) return null;
     if (isDatabaseConnected()) {
-      const isObjectId = /^[0-9a-fA-F]{24}$/.test(String(id));
+      const isObjectId = typeof id === 'string' && /^[0-9a-fA-F]{24}$/.test(id);
       return isObjectId
         ? await Issue.findById(id)
-        : await Issue.findOne({ issueCode: id });
+            .populate('assignedTo', 'name email role phone')
+            .populate('wingId', 'nameEn nameBn slug')
+        : null;
     }
-    return memoryStore.issues.find(i => String(i._id) === String(id) || i.issueCode === id) || null;
+    return memoryStore.issues.find(i => String(i._id) === String(id)) || null;
   },
 
-  async createIssue(data) {
-    if (!data.issueCode) data.issueCode = await this.generateIssueCode();
-    if (isDatabaseConnected()) return await Issue.create(data);
-    const issue = { ...data, _id: `issue_${Date.now()}`, createdAt: new Date(), updatedAt: new Date() };
-    memoryStore.issues.unshift(issue);
-    return issue;
-  },
-
-  async updateIssueStatus(id, status) {
+  async getIssueByCode(issueCode) {
+    if (!issueCode) return null;
+    const cleanCode = issueCode.trim();
     if (isDatabaseConnected()) {
-      const isObjectId = /^[0-9a-fA-F]{24}$/.test(String(id));
-      return await Issue.findOneAndUpdate(
-        isObjectId ? { _id: id } : { issueCode: id },
-        { status, updatedAt: new Date() },
-        { new: true }
-      );
+      return await Issue.findOne({
+        issueCode: { $regex: new RegExp(`^${cleanCode}$`, 'i') }
+      })
+        .populate('assignedTo', 'name email role phone')
+        .populate('wingId', 'nameEn nameBn slug');
     }
-    const issue = memoryStore.issues.find(i => String(i._id) === String(id) || i.issueCode === id);
-    if (!issue) return null;
-    issue.status = status;
-    issue.updatedAt = new Date();
-    return issue;
+    return (
+      memoryStore.issues.find(
+        i => i.issueCode && i.issueCode.toLowerCase() === cleanCode.toLowerCase()
+      ) || null
+    );
   },
 
-  async assignIssue(id, { assignedTo, assignedToId }) {
+  async updateIssue(id, data) {
+    if (!id) return null;
     if (isDatabaseConnected()) {
-      const isObjectId = /^[0-9a-fA-F]{24}$/.test(String(id));
-      return await Issue.findOneAndUpdate(
-        isObjectId ? { _id: id } : { issueCode: id },
-        { assignedTo, assignedToId, updatedAt: new Date() },
-        { new: true }
-      );
+      const isObjectId = typeof id === 'string' && /^[0-9a-fA-F]{24}$/.test(id);
+      return isObjectId
+        ? await Issue.findByIdAndUpdate(id, data, { new: true, runValidators: true })
+            .populate('assignedTo', 'name email role phone')
+            .populate('wingId', 'nameEn nameBn slug')
+        : null;
     }
-    const issue = memoryStore.issues.find(i => String(i._id) === String(id) || i.issueCode === id);
-    if (!issue) return null;
-    issue.assignedTo = assignedTo;
-    issue.assignedToId = assignedToId;
-    issue.updatedAt = new Date();
-    return issue;
-  },
-
-  async countResolvedIssues() {
-    if (isDatabaseConnected()) return await Issue.countDocuments({ status: 'resolved' });
-    return memoryStore.issues.filter(i => i.status === 'resolved').length;
-  },
-
-  async getImpactStats() {
-    if (isDatabaseConnected()) {
-      return {
-        totalPrograms: await Program.countDocuments(),
-        totalVolunteers: await User.countDocuments({ role: 'volunteer' }),
-        resolvedIssues: await Issue.countDocuments({ status: 'resolved' })
+    const idx = memoryStore.issues.findIndex(i => String(i._id) === String(id));
+    if (idx !== -1) {
+      let assignedUser = memoryStore.issues[idx].assignedTo;
+      if (data.assignedTo !== undefined) {
+        if (data.assignedTo) {
+          const u = memoryStore.users.find(usr => String(usr._id) === String(data.assignedTo));
+          assignedUser = u ? { _id: u._id, name: u.name, email: u.email, role: u.role, phone: u.phone } : data.assignedTo;
+        } else {
+          assignedUser = null;
+        }
+      }
+      let wingInfo = memoryStore.issues[idx].wingId;
+      if (data.wingId !== undefined) {
+        if (data.wingId) {
+          const w = memoryStore.wings.find(wing => String(wing._id) === String(data.wingId));
+          wingInfo = w ? { _id: w._id, nameEn: w.nameEn, nameBn: w.nameBn, slug: w.slug } : data.wingId;
+        } else {
+          wingInfo = null;
+        }
+      }
+      memoryStore.issues[idx] = {
+        ...memoryStore.issues[idx],
+        ...data,
+        assignedTo: assignedUser,
+        wingId: wingInfo,
+        updatedAt: new Date()
       };
+      return memoryStore.issues[idx];
     }
-    return {
-      totalPrograms: memoryStore.programs.length,
-      totalVolunteers: memoryStore.users.filter(user => user.role === 'volunteer').length,
-      resolvedIssues: memoryStore.issues.filter(issue => issue.status === 'resolved').length
-    };
+    return null;
   },
 
-  // ─── Event Registrations ───────────────────────────────────────────────────
-  async getEventRegistrations(eventId) {
-    if (isDatabaseConnected()) return await EventRegistration.find({ eventId: String(eventId) }).sort({ registeredAt: 1 });
-    return memoryStore.registrations.filter(r => String(r.eventId) === String(eventId));
-  },
-
-  async getRegistrationByUserAndEvent(userId, eventId) {
-    if (isDatabaseConnected()) return await EventRegistration.findOne({ userId: String(userId), eventId: String(eventId) });
-    return memoryStore.registrations.find(r => String(r.userId) === String(userId) && String(r.eventId) === String(eventId)) || null;
-  },
-
-  async createEventRegistration(data) {
+  async deleteIssue(id) {
+    if (!id) return null;
     if (isDatabaseConnected()) {
-      try {
-        return await EventRegistration.create(data);
-      } catch (err) {
-        if (err.code === 11000) throw new Error('Already registered for this event');
-        throw err;
+      const isObjectId = typeof id === 'string' && /^[0-9a-fA-F]{24}$/.test(id);
+      return isObjectId ? await Issue.findByIdAndDelete(id) : null;
+    }
+    const idx = memoryStore.issues.findIndex(i => String(i._id) === String(id));
+    if (idx !== -1) {
+      const removed = memoryStore.issues.splice(idx, 1);
+      return removed[0];
+    }
+    return null;
+  },
+
+  // Event Registrations
+  async createEventRegistration({ eventId, userId, registeredAt = new Date(), attended = false }) {
+    if (isDatabaseConnected()) {
+      const created = await EventRegistration.create({
+        eventId,
+        userId,
+        memberId: userId,
+        registeredAt,
+        attended
+      });
+      return await EventRegistration.findById(created._id)
+        .populate('userId', 'name email role phone memberId assignedWing')
+        .populate('eventId', 'title date location capacity status wingId');
+    }
+
+    const user = memoryStore.users.find(u => String(u._id) === String(userId));
+    const event = memoryStore.events.find(e => String(e._id) === String(eventId));
+
+    const newReg = {
+      _id: 'reg_' + Date.now(),
+      eventId: event ? { _id: event._id, title: event.title, date: event.date, location: event.location, capacity: event.capacity, status: event.status, wingId: event.wingId } : eventId,
+      userId: user ? { _id: user._id, name: user.name, email: user.email, role: user.role, phone: user.phone, memberId: user.memberId, assignedWing: user.assignedWing } : userId,
+      memberId: userId,
+      registeredAt,
+      attended,
+      createdAt: new Date(),
+      updatedAt: new Date()
+    };
+    memoryStore.eventRegistrations.unshift(newReg);
+    return newReg;
+  },
+
+  async getEventRegistration(eventId, userId) {
+    if (!eventId || !userId) return null;
+    if (isDatabaseConnected()) {
+      return await EventRegistration.findOne({ eventId, userId })
+        .populate('userId', 'name email role phone memberId assignedWing')
+        .populate('eventId', 'title date location capacity status wingId');
+    }
+    return (
+      memoryStore.eventRegistrations.find(
+        r =>
+          String(r.eventId?._id || r.eventId) === String(eventId) &&
+          String(r.userId?._id || r.userId) === String(userId)
+      ) || null
+    );
+  },
+
+  async getEventRegistrations(eventId) {
+    if (!eventId) return [];
+    if (isDatabaseConnected()) {
+      return await EventRegistration.find({ eventId })
+        .sort({ registeredAt: 1 })
+        .populate('userId', 'name email role phone memberId assignedWing');
+    }
+    return memoryStore.eventRegistrations.filter(
+      r => String(r.eventId?._id || r.eventId) === String(eventId)
+    );
+  },
+
+  async getEventRegistrationCount(eventId) {
+    if (!eventId) return 0;
+    if (isDatabaseConnected()) {
+      return await EventRegistration.countDocuments({ eventId });
+    }
+    return memoryStore.eventRegistrations.filter(
+      r => String(r.eventId?._id || r.eventId) === String(eventId)
+    ).length;
+  },
+
+  async updateEventAttendance(eventId, attendees = []) {
+    if (!eventId) return [];
+    const results = [];
+    if (isDatabaseConnected()) {
+      for (const item of attendees) {
+        const idKey = item.registrationId || item._id;
+        const userKey = item.userId;
+        const query = { eventId };
+        if (idKey) {
+          query._id = idKey;
+        } else if (userKey) {
+          query.$or = [{ userId: userKey }, { memberId: userKey }];
+        } else {
+          continue;
+        }
+
+        const updated = await EventRegistration.findOneAndUpdate(
+          query,
+          { attended: Boolean(item.attended) },
+          { new: true }
+        ).populate('userId', 'name email role phone memberId assignedWing');
+
+        if (updated) {
+          results.push(updated);
+        }
+      }
+      return results;
+    }
+
+    for (const item of attendees) {
+      const idKey = item.registrationId || item._id;
+      const userKey = item.userId;
+      const idx = memoryStore.eventRegistrations.findIndex(r => {
+        const matchesEvent = String(r.eventId?._id || r.eventId) === String(eventId);
+        if (!matchesEvent) return false;
+        if (idKey) return String(r._id) === String(idKey);
+        if (userKey) return String(r.userId?._id || r.userId) === String(userKey);
+        return false;
+      });
+
+      if (idx !== -1) {
+        memoryStore.eventRegistrations[idx] = {
+          ...memoryStore.eventRegistrations[idx],
+          attended: Boolean(item.attended),
+          updatedAt: new Date()
+        };
+        results.push(memoryStore.eventRegistrations[idx]);
       }
     }
-    const existing = await this.getRegistrationByUserAndEvent(data.userId, data.eventId);
-    if (existing) throw new Error('Already registered for this event');
-    const reg = { ...data, _id: `reg_${Date.now()}`, registeredAt: new Date(), attended: false };
-    memoryStore.registrations.push(reg);
-    return reg;
+    return results;
   },
 
-  async markAttendance(eventId, userId, attended) {
+  // Impact Statistics
+  async getImpactStats() {
     if (isDatabaseConnected()) {
-      return await EventRegistration.findOneAndUpdate(
-        { eventId: String(eventId), userId: String(userId) },
-        { attended },
-        { new: true }
-      );
+      const [totalPrograms, totalVolunteers, resolvedIssues] = await Promise.all([
+        Program.countDocuments({}),
+        User.countDocuments({ role: 'volunteer' }),
+        Issue.countDocuments({ status: 'resolved' })
+      ]);
+      return {
+        totalPrograms,
+        totalVolunteers,
+        resolvedIssues
+      };
     }
-    const reg = memoryStore.registrations.find(r => String(r.eventId) === String(eventId) && String(r.userId) === String(userId));
-    if (!reg) return null;
-    reg.attended = attended;
-    return reg;
+
+    const totalPrograms = memoryStore.programs.length;
+    const totalVolunteers = memoryStore.users.filter(u => u.role === 'volunteer').length;
+    const resolvedIssues = memoryStore.issues.filter(i => i.status === 'resolved').length;
+
+    return {
+      totalPrograms,
+      totalVolunteers,
+      resolvedIssues
+    };
   }
 };
+
+
+

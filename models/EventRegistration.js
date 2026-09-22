@@ -3,32 +3,23 @@ import mongoose from 'mongoose';
 const eventRegistrationSchema = new mongoose.Schema(
   {
     eventId: {
-      type: String,
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Event',
       required: true,
-      trim: true,
       index: true
     },
     userId: {
-      type: String,
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
       required: true,
-      trim: true,
       index: true
     },
-    userName: {
-      type: String,
-      trim: true,
-      default: ''
-    },
-    userEmail: {
-      type: String,
-      trim: true,
-      lowercase: true,
-      default: ''
-    },
-    userMemberId: {
-      type: String,
-      trim: true,
-      default: ''
+    memberId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: function () {
+        return this.userId;
+      }
     },
     registeredAt: {
       type: Date,
@@ -44,8 +35,11 @@ const eventRegistrationSchema = new mongoose.Schema(
   }
 );
 
-// Compound unique index: one registration per user per event
+// Compound index to guarantee unique registration per user per event
 eventRegistrationSchema.index({ eventId: 1, userId: 1 }, { unique: true });
 
-const EventRegistration = mongoose.models.EventRegistration || mongoose.model('EventRegistration', eventRegistrationSchema);
+const EventRegistration =
+  mongoose.models.EventRegistration ||
+  mongoose.model('EventRegistration', eventRegistrationSchema);
+
 export default EventRegistration;

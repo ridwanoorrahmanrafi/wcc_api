@@ -15,3 +15,17 @@ export const verifyToken = (req, res, next) => {
     return res.status(403).json({ error: 'Invalid or expired token.' });
   }
 };
+
+export const requireRole = (...roles) => {
+  return (req, res, next) => {
+    if (!req.user || !roles.includes(req.user.role)) {
+      return res.status(403).json({ error: 'Access denied. Insufficient permissions.' });
+    }
+    next();
+  };
+};
+
+export const requireAdmin = requireRole('admin');
+export const requireCoordinator = requireRole('coordinator');
+export const requireAdminOrCoordinator = requireRole('admin', 'coordinator');
+

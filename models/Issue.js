@@ -24,11 +24,6 @@ const issueSchema = new mongoose.Schema(
       required: true,
       trim: true
     },
-    wingId: {
-      type: String,
-      trim: true,
-      default: ''
-    },
     photoUrl: {
       type: String,
       trim: true,
@@ -38,6 +33,8 @@ const issueSchema = new mongoose.Schema(
       type: String,
       enum: ['pending', 'in_progress', 'resolved'],
       default: 'pending',
+      lowercase: true,
+      trim: true,
       index: true
     },
     reporterName: {
@@ -51,14 +48,16 @@ const issueSchema = new mongoose.Schema(
       trim: true
     },
     assignedTo: {
-      type: String,
-      trim: true,
-      default: ''
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null,
+      index: true
     },
-    assignedToId: {
-      type: String,
-      trim: true,
-      default: ''
+    wingId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Wing',
+      default: null,
+      index: true
     }
   },
   {
