@@ -51,7 +51,7 @@ router.post('/register', async (req, res, next) => {
     }
 
     const token = jwt.sign(
-      { id: user._id, email: user.email, role: user.role, name: user.name },
+      { id: user._id, email: user.email, role: user.role, name: user.name, memberId: user.memberId, assignedWing: user.assignedWing },
       process.env.JWT_SECRET || 'supersecretjwtkey_change_in_production',
       { expiresIn: '7d' }
     );
@@ -68,7 +68,8 @@ router.post('/register', async (req, res, next) => {
         memberId: user.memberId,
         volunteerWing: user.volunteerWing,
         volunteerInterests: user.volunteerInterests,
-        totalHours: user.totalHours || 0
+        totalHours: user.totalHours || 0,
+        assignedWing: user.assignedWing || ''
       }
     });
   } catch (err) {
@@ -97,7 +98,7 @@ router.post('/login', async (req, res, next) => {
     }
 
     const token = jwt.sign(
-      { id: user._id, email: user.email, role: user.role, name: user.name },
+      { id: user._id, email: user.email, role: user.role, name: user.name, memberId: user.memberId, assignedWing: user.assignedWing },
       process.env.JWT_SECRET || 'supersecretjwtkey_change_in_production',
       { expiresIn: '7d' }
     );
@@ -114,7 +115,8 @@ router.post('/login', async (req, res, next) => {
         memberId: user.memberId,
         volunteerWing: user.volunteerWing || '',
         volunteerInterests: user.volunteerInterests || [],
-        totalHours: user.totalHours || 0
+        totalHours: user.totalHours || 0,
+        assignedWing: user.assignedWing || ''
       }
     });
   } catch (err) {
@@ -165,7 +167,7 @@ router.post('/google', async (req, res, next) => {
     }
 
     const token = jwt.sign(
-      { id: user._id, email: user.email, role: user.role, name: user.name },
+      { id: user._id, email: user.email, role: user.role, name: user.name, memberId: user.memberId, assignedWing: user.assignedWing },
       process.env.JWT_SECRET || 'supersecretjwtkey_change_in_production',
       { expiresIn: '7d' }
     );
@@ -182,7 +184,8 @@ router.post('/google', async (req, res, next) => {
         memberId: user.memberId || '',
         volunteerWing: user.volunteerWing || 'সাধারণ উইং',
         volunteerInterests: user.volunteerInterests || [],
-        totalHours: user.totalHours || 0
+        totalHours: user.totalHours || 0,
+        assignedWing: user.assignedWing || ''
       }
     });
   } catch (err) {
@@ -207,7 +210,8 @@ router.get('/me', verifyToken, async (req, res, next) => {
         memberId: user.memberId,
         volunteerWing: user.volunteerWing || '',
         volunteerInterests: user.volunteerInterests || [],
-        totalHours: user.totalHours || 0
+        totalHours: user.totalHours || 0,
+        assignedWing: user.assignedWing || ''
       }
     });
   } catch (err) {

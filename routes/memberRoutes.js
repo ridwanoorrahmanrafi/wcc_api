@@ -1,5 +1,6 @@
 import express from 'express';
 import { Store } from '../data/store.js';
+import { sendMemberRequestDecisionEmail } from '../services/emailService.js';
 
 const router = express.Router();
 
@@ -123,6 +124,7 @@ router.patch('/requests/:id', async (req, res, next) => {
       recordId: updated.memberId,
       details: `${status.toUpperCase()} ${updated.type} request for ${updated.memberName} (${updated.memberId})`
     });
+    sendMemberRequestDecisionEmail(updated, status).catch(err => console.error('[Email] Member request notification failed:', err.message));
 
     res.json(updated);
   } catch (err) {

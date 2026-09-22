@@ -22,7 +22,7 @@ const userSchema = new mongoose.Schema(
     },
     role: {
       type: String,
-      enum: ['admin', 'finance_officer', 'member', 'volunteer'],
+      enum: ['admin', 'finance_officer', 'coordinator', 'member', 'volunteer'],
       default: 'member'
     },
     phone: {
@@ -36,6 +36,10 @@ const userSchema = new mongoose.Schema(
     volunteerWing: {
       type: String,
       trim: true
+    },
+    assignedWing: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Wing'
     },
     volunteerInterests: {
       type: [String],
