@@ -11,6 +11,11 @@ import Advance from '../models/Advance.js';
 import Vendor from '../models/Vendor.js';
 import AuditLog from '../models/AuditLog.js';
 import MemberRequest from '../models/MemberRequest.js';
+import Wing from '../models/Wing.js';
+import Program from '../models/Program.js';
+import Event from '../models/Event.js';
+import Issue from '../models/Issue.js';
+import EventRegistration from '../models/EventRegistration.js';
 import bcrypt from 'bcryptjs';
 
 // Empty in-memory fallback cache (used only if MongoDB is offline)
@@ -26,10 +31,127 @@ const memoryStore = {
   advances: [],
   vendors: [],
   auditLogs: [],
-  requests: []
+  requests: [],
+  wings: [],
+  programs: [],
+  events: [],
+  issues: [],
+  issueCounter: 0,
+  registrations: []
 };
 
 export const Store = {
+  // Wings, Programs, and Events
+  async getWings() {
+    if (isDatabaseConnected()) return await Wing.find({}).sort({ nameEn: 1 });
+    return memoryStore.wings;
+  },
+
+  async getWingBySlug(slug) {
+    if (isDatabaseConnected()) return await Wing.findOne({ slug: String(slug).toLowerCase() });
+    return memoryStore.wings.find(wing => wing.slug === String(slug).toLowerCase()) || null;
+  },
+
+  async getWingById(id) {
+    if (!id) return null;
+    if (isDatabaseConnected()) return await Wing.findById(id);
+    return memoryStore.wings.find(wing => String(wing._id) === String(id)) || null;
+  },
+
+  async createWing(data) {
+    if (isDatabaseConnected()) return await Wing.create(data);
+    const wing = { ...data, slug: String(data.slug).toLowerCase(), _id: `wing_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`, createdAt: new Date(), updatedAt: new Date() };
+    memoryStore.wings.push(wing);
+    return wing;
+  },
+
+  async updateWing(id, data) {
+    if (isDatabaseConnected()) return await Wing.findByIdAndUpdate(id, data, { new: true, runValidators: true });
+    const wing = await this.getWingById(id);
+    if (!wing) return null;
+    Object.assign(wing, data, data.slug ? { slug: String(data.slug).toLowerCase() } : {}, { updatedAt: new Date() });
+    return wing;
+  },
+
+  async deleteWing(id) {
+    if (isDatabaseConnected()) return await Wing.findByIdAndDelete(id);
+    const index = memoryStore.wings.findIndex(wing => String(wing._id) === String(id));
+    return index === -1 ? null : memoryStore.wings.splice(index, 1)[0];
+  },
+
+  async getPrograms({ wingId, publicOnly = false } = {}) {
+    if (isDatabaseConnected()) {
+      const query = {};
+      if (wingId) query.wingId = wingId;
+      if (publicOnly) query.status = 'published';
+      return await Program.find(query).populate('wingId').sort({ startDate: 1, createdAt: -1 });
+    }
+    return memoryStore.programs.filter(program => (!wingId || String(program.wingId) === String(wingId)) && (!publicOnly || program.status === 'published'));
+  },
+
+  async getProgramById(id) {
+    if (isDatabaseConnected()) return await Program.findById(id).populate('wingId');
+    return memoryStore.programs.find(program => String(program._id) === String(id)) || null;
+  },
+
+  async createProgram(data) {
+    if (isDatabaseConnected()) return await Program.create(data);
+    const program = { ...data, _id: `program_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`, createdAt: new Date(), updatedAt: new Date() };
+    memoryStore.programs.push(program);
+    return program;
+  },
+
+  async updateProgram(id, data) {
+    if (isDatabaseConnected()) return await Program.findByIdAndUpdate(id, data, { new: true, runValidators: true });
+    const program = await this.getProgramById(id);
+    if (!program) return null;
+    Object.assign(program, data, { updatedAt: new Date() });
+    return program;
+  },
+
+  async deleteProgram(id) {
+    if (isDatabaseConnected()) return await Program.findByIdAndDelete(id);
+    const index = memoryStore.programs.findIndex(program => String(program._id) === String(id));
+    return index === -1 ? null : memoryStore.programs.splice(index, 1)[0];
+  },
+
+  async getEvents({ wingId, programId, publicOnly = false } = {}) {
+    if (isDatabaseConnected()) {
+      const query = {};
+      if (wingId) query.wingId = wingId;
+      if (programId) query.programId = programId;
+      if (publicOnly) query.status = 'published';
+      return await Event.find(query).populate('wingId programId').sort({ date: 1 });
+    }
+    return memoryStore.events.filter(event => (!wingId || String(event.wingId) === String(wingId)) && (!programId || String(event.programId) === String(programId)) && (!publicOnly || event.status === 'published'));
+  },
+
+  async getEventById(id) {
+    if (isDatabaseConnected()) return await Event.findById(id).populate('wingId programId');
+    return memoryStore.events.find(event => String(event._id) === String(id)) || null;
+  },
+
+  async createEvent(data) {
+    if (isDatabaseConnected()) return await Event.create(data);
+    const event = { ...data, _id: `event_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`, createdAt: new Date(), updatedAt: new Date() };
+    memoryStore.events.push(event);
+    return event;
+  },
+
+  async updateEvent(id, data) {
+    if (isDatabaseConnected()) return await Event.findByIdAndUpdate(id, data, { new: true, runValidators: true });
+    const event = await this.getEventById(id);
+    if (!event) return null;
+    Object.assign(event, data, { updatedAt: new Date() });
+    return event;
+  },
+
+  async deleteEvent(id) {
+    if (isDatabaseConnected()) return await Event.findByIdAndDelete(id);
+    const index = memoryStore.events.findIndex(event => String(event._id) === String(id));
+    return index === -1 ? null : memoryStore.events.splice(index, 1)[0];
+  },
+
   // Members
   async getMembers({ search, wing, blood, status, profession, page = 1, limit = 50 }) {
     if (isDatabaseConnected()) {
@@ -610,5 +732,142 @@ export const Store = {
       return memoryStore.requests[idx];
     }
     return null;
+  },
+
+  // ─── Issues ────────────────────────────────────────────────────────────────
+  async generateIssueCode() {
+    const year = new Date().getFullYear();
+    if (isDatabaseConnected()) {
+      const count = await Issue.countDocuments();
+      return `WCC-ISSUE-${year}-${String(count + 1).padStart(4, '0')}`;
+    }
+    memoryStore.issueCounter += 1;
+    return `WCC-ISSUE-${year}-${String(memoryStore.issueCounter).padStart(4, '0')}`;
+  },
+
+  async getIssues({ status, wingId, limit = 100 } = {}) {
+    if (isDatabaseConnected()) {
+      const query = {};
+      if (status && status !== 'All') query.status = status;
+      if (wingId) query.wingId = wingId;
+      return await Issue.find(query).sort({ createdAt: -1 }).limit(Number(limit));
+    }
+    return memoryStore.issues.filter(i =>
+      (!status || status === 'All' || i.status === status) &&
+      (!wingId || i.wingId === wingId)
+    ).slice(0, Number(limit));
+  },
+
+  async getIssueById(id) {
+    if (!id) return null;
+    if (isDatabaseConnected()) {
+      const isObjectId = /^[0-9a-fA-F]{24}$/.test(String(id));
+      return isObjectId
+        ? await Issue.findById(id)
+        : await Issue.findOne({ issueCode: id });
+    }
+    return memoryStore.issues.find(i => String(i._id) === String(id) || i.issueCode === id) || null;
+  },
+
+  async createIssue(data) {
+    if (!data.issueCode) data.issueCode = await this.generateIssueCode();
+    if (isDatabaseConnected()) return await Issue.create(data);
+    const issue = { ...data, _id: `issue_${Date.now()}`, createdAt: new Date(), updatedAt: new Date() };
+    memoryStore.issues.unshift(issue);
+    return issue;
+  },
+
+  async updateIssueStatus(id, status) {
+    if (isDatabaseConnected()) {
+      const isObjectId = /^[0-9a-fA-F]{24}$/.test(String(id));
+      return await Issue.findOneAndUpdate(
+        isObjectId ? { _id: id } : { issueCode: id },
+        { status, updatedAt: new Date() },
+        { new: true }
+      );
+    }
+    const issue = memoryStore.issues.find(i => String(i._id) === String(id) || i.issueCode === id);
+    if (!issue) return null;
+    issue.status = status;
+    issue.updatedAt = new Date();
+    return issue;
+  },
+
+  async assignIssue(id, { assignedTo, assignedToId }) {
+    if (isDatabaseConnected()) {
+      const isObjectId = /^[0-9a-fA-F]{24}$/.test(String(id));
+      return await Issue.findOneAndUpdate(
+        isObjectId ? { _id: id } : { issueCode: id },
+        { assignedTo, assignedToId, updatedAt: new Date() },
+        { new: true }
+      );
+    }
+    const issue = memoryStore.issues.find(i => String(i._id) === String(id) || i.issueCode === id);
+    if (!issue) return null;
+    issue.assignedTo = assignedTo;
+    issue.assignedToId = assignedToId;
+    issue.updatedAt = new Date();
+    return issue;
+  },
+
+  async countResolvedIssues() {
+    if (isDatabaseConnected()) return await Issue.countDocuments({ status: 'resolved' });
+    return memoryStore.issues.filter(i => i.status === 'resolved').length;
+  },
+
+  async getImpactStats() {
+    if (isDatabaseConnected()) {
+      return {
+        totalPrograms: await Program.countDocuments(),
+        totalVolunteers: await User.countDocuments({ role: 'volunteer' }),
+        resolvedIssues: await Issue.countDocuments({ status: 'resolved' })
+      };
+    }
+    return {
+      totalPrograms: memoryStore.programs.length,
+      totalVolunteers: memoryStore.users.filter(user => user.role === 'volunteer').length,
+      resolvedIssues: memoryStore.issues.filter(issue => issue.status === 'resolved').length
+    };
+  },
+
+  // ─── Event Registrations ───────────────────────────────────────────────────
+  async getEventRegistrations(eventId) {
+    if (isDatabaseConnected()) return await EventRegistration.find({ eventId: String(eventId) }).sort({ registeredAt: 1 });
+    return memoryStore.registrations.filter(r => String(r.eventId) === String(eventId));
+  },
+
+  async getRegistrationByUserAndEvent(userId, eventId) {
+    if (isDatabaseConnected()) return await EventRegistration.findOne({ userId: String(userId), eventId: String(eventId) });
+    return memoryStore.registrations.find(r => String(r.userId) === String(userId) && String(r.eventId) === String(eventId)) || null;
+  },
+
+  async createEventRegistration(data) {
+    if (isDatabaseConnected()) {
+      try {
+        return await EventRegistration.create(data);
+      } catch (err) {
+        if (err.code === 11000) throw new Error('Already registered for this event');
+        throw err;
+      }
+    }
+    const existing = await this.getRegistrationByUserAndEvent(data.userId, data.eventId);
+    if (existing) throw new Error('Already registered for this event');
+    const reg = { ...data, _id: `reg_${Date.now()}`, registeredAt: new Date(), attended: false };
+    memoryStore.registrations.push(reg);
+    return reg;
+  },
+
+  async markAttendance(eventId, userId, attended) {
+    if (isDatabaseConnected()) {
+      return await EventRegistration.findOneAndUpdate(
+        { eventId: String(eventId), userId: String(userId) },
+        { attended },
+        { new: true }
+      );
+    }
+    const reg = memoryStore.registrations.find(r => String(r.eventId) === String(eventId) && String(r.userId) === String(userId));
+    if (!reg) return null;
+    reg.attended = attended;
+    return reg;
   }
 };
