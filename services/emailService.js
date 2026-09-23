@@ -84,6 +84,9 @@ export const sendMailSafe = async ({ to, subject, html, text }) => {
       messageId: result.messageId,
       timestamp: new Date()
     };
+    if (sentEmails.length >= 200) {
+      sentEmails.shift();
+    }
     sentEmails.push(record);
 
     console.log(`[EmailService] Notification sent to: ${to} | Subject: "${subject}"`);

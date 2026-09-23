@@ -42,10 +42,6 @@ const userSchema = new mongoose.Schema(
       type: String,
       trim: true
     },
-    assignedWing: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'Wing'
-    },
     volunteerInterests: {
       type: [String],
       default: []

@@ -2,6 +2,7 @@ import express from 'express';
 import { Store } from '../data/store.js';
 import { verifyToken, requireAdminOrCoordinator } from '../middleware/auth.js';
 import { sendIssueStatusEmail, isValidEmail } from '../services/emailService.js';
+import { publicSubmitLimiter } from '../middleware/rateLimiters.js';
 
 const router = express.Router();
 const ALLOWED_STATUSES = ['pending', 'in_progress', 'resolved'];
@@ -37,7 +38,7 @@ async function generateUniqueIssueCode() {
  * Public endpoint to submit a community issue.
  * Validates required fields, generates a unique issueCode, defaults status to pending.
  */
-router.post('/', async (req, res, next) => {
+router.post('/', publicSubmitLimiter, async (req, res, next) => {
   try {
     const { title, description, location, reporterName, reporterContact, photoUrl, wingId } = req.body;
 

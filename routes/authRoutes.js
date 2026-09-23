@@ -5,6 +5,9 @@ import crypto from 'crypto';
 import { Store } from '../data/store.js';
 import { verifyToken, requireAdmin, requireAdminOrCoordinator } from '../middleware/auth.js';
 import { sendPasswordResetEmail } from '../services/emailService.js';
+import { loginLimiter } from '../middleware/rateLimiters.js';
+import VolunteerLog from '../models/VolunteerLog.js';
+import User from '../models/User.js';
 
 
 const router = express.Router();
@@ -61,7 +64,7 @@ router.post('/register', async (req, res, next) => {
         name: user.name,
         assignedWing: user.assignedWing ? (user.assignedWing._id || user.assignedWing) : null
       },
-      process.env.JWT_SECRET || 'supersecretjwtkey_change_in_production',
+      process.env.JWT_SECRET,
       { expiresIn: '7d' }
     );
 
@@ -87,7 +90,7 @@ router.post('/register', async (req, res, next) => {
 });
 
 // Login
-router.post('/login', async (req, res, next) => {
+router.post('/login', loginLimiter, async (req, res, next) => {
   try {
     const { email, password } = req.body;
     if (!email || !password) {
@@ -100,9 +103,7 @@ router.post('/login', async (req, res, next) => {
     }
 
     const isMatch = await bcrypt.compare(password, user.password);
-    // Also allow demo plaintext check in case of initial mock fallback
-    const isDirectMatch = user.password === password;
-    if (!isMatch && !isDirectMatch) {
+    if (!isMatch) {
       return res.status(401).json({ error: 'Invalid email or password' });
     }
 
@@ -114,7 +115,7 @@ router.post('/login', async (req, res, next) => {
         name: user.name,
         assignedWing: user.assignedWing ? (user.assignedWing._id || user.assignedWing) : null
       },
-      process.env.JWT_SECRET || 'supersecretjwtkey_change_in_production',
+      process.env.JWT_SECRET,
       { expiresIn: '7d' }
     );
 
@@ -183,7 +184,7 @@ router.post('/google', async (req, res, next) => {
 
     const token = jwt.sign(
       { id: user._id, email: user.email, role: user.role, name: user.name },
-      process.env.JWT_SECRET || 'supersecretjwtkey_change_in_production',
+      process.env.JWT_SECRET,
       { expiresIn: '7d' }
     );
 
@@ -450,8 +451,7 @@ router.put('/change-password', verifyToken, async (req, res, next) => {
 
     // Verify current password
     const isMatch = await bcrypt.compare(currentPassword, user.password);
-    const isDirectMatch = user.password === currentPassword; // dev fallback
-    if (!isMatch && !isDirectMatch) {
+    if (!isMatch) {
       return res.status(400).json({ error: 'Current password does not match' });
     }
 
@@ -488,6 +488,12 @@ router.get('/users', verifyToken, requireAdmin, async (req, res, next) => {
         assignedWing: u.assignedWing || null,
         phone: u.phone || '',
         memberId: u.memberId || '',
+        volunteerWing: u.volunteerWing || '',
+        volunteerInterests: u.volunteerInterests || [],
+        totalHours: u.totalHours || 0,
+        upazila: u.upazila || '',
+        district: u.district || '',
+        photoUrl: u.photoUrl || '',
         status: u.status || 'active',
         createdAt: u.createdAt
       }))
@@ -511,7 +517,14 @@ router.get('/coordinators', verifyToken, requireAdminOrCoordinator, async (req, 
         assignedWing: u.assignedWing || null,
         phone: u.phone || '',
         memberId: u.memberId || '',
-        status: u.status || 'active'
+        volunteerWing: u.volunteerWing || '',
+        volunteerInterests: u.volunteerInterests || [],
+        totalHours: u.totalHours || 0,
+        upazila: u.upazila || '',
+        district: u.district || '',
+        photoUrl: u.photoUrl || '',
+        status: u.status || 'active',
+        createdAt: u.createdAt
       }))
     );
   } catch (err) {
@@ -532,9 +545,16 @@ router.patch('/users/:id/wing', verifyToken, requireAdmin, async (req, res, next
       }
     }
 
-    const updatedUser = await Store.updateUser(req.params.id, {
+    const updateFields = {
       assignedWing: assignedWing || null
-    });
+    };
+    if (wingObj) {
+      updateFields.volunteerWing = `${wingObj.nameBn} (${wingObj.nameEn})`;
+    } else if (assignedWing === null || assignedWing === '') {
+      updateFields.volunteerWing = '';
+    }
+
+    const updatedUser = await Store.updateUser(req.params.id, updateFields);
 
     if (!updatedUser) {
       return res.status(404).json({ error: 'User not found' });
@@ -623,9 +643,6 @@ router.patch('/users/:id/role', verifyToken, requireAdmin, async (req, res, next
 });
 
 // Volunteer Service Log Endpoints
-import VolunteerLog from '../models/VolunteerLog.js';
-import User from '../models/User.js';
-
 router.post('/volunteer/log', verifyToken, async (req, res, next) => {
   try {
     const { driveName, hours, notes } = req.body;

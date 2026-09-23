@@ -11,9 +11,14 @@ import programRoutes from './routes/programRoutes.js';
 import eventRoutes from './routes/eventRoutes.js';
 import issueRoutes from './routes/issueRoutes.js';
 import statsRoutes from './routes/statsRoutes.js';
+import notificationRoutes from './routes/notificationRoutes.js';
 
 // Load environment variables
 dotenv.config();
+
+// Validate critical environment variables
+import { validateEnv } from './config/env.js';
+validateEnv();
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -22,9 +27,14 @@ const PORT = process.env.PORT || 5000;
 connectDB();
 
 // Middleware
+const clientOrigin = process.env.CLIENT_URL || 'http://localhost:3000';
+if (!process.env.CLIENT_URL) {
+  console.warn('[CORS Notice] CLIENT_URL not set in environment. Defaulting to http://localhost:3000');
+}
+
 app.use(
   cors({
-    origin: '*',
+    origin: clientOrigin,
     credentials: true
   })
 );
@@ -79,6 +89,7 @@ app.use('/api/programs', programRoutes);
 app.use('/api/events', eventRoutes);
 app.use('/api/issues', issueRoutes);
 app.use('/api/stats', statsRoutes);
+app.use('/api/notifications', notificationRoutes);
 
 // 404 Handler
 app.use((req, res) => {

@@ -1,41 +1,26 @@
 import express from 'express';
-import jwt from 'jsonwebtoken';
 import { Store } from '../data/store.js';
-import { verifyToken, requireAdminOrCoordinator } from '../middleware/auth.js';
+import { verifyToken, requireAdminOrCoordinator, optionalAuth } from '../middleware/auth.js';
 import { sendEventRegistrationEmail, isValidEmail } from '../services/emailService.js';
+import { publicSubmitLimiter } from '../middleware/rateLimiters.js';
 
 const router = express.Router();
 const ALLOWED_STATUSES = ['draft', 'published', 'completed', 'cancelled'];
 
-// Optional auth helper to check if requester is an admin or coordinator
-const getRequesterAuth = (req) => {
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) return { isAdmin: false, isCoordinator: false, assignedWing: null };
-  const token = authHeader.split(' ')[1];
-  try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'supersecretjwtkey_change_in_production');
-    return {
-      isAdmin: decoded.role === 'admin',
-      isCoordinator: decoded.role === 'coordinator',
-      assignedWing: decoded.assignedWing ? String(decoded.assignedWing._id || decoded.assignedWing) : null
-    };
-  } catch {
-    return { isAdmin: false, isCoordinator: false, assignedWing: null };
-  }
-};
-
 // List events with optional filters (Public users get published events; Admins and Coordinators can manage)
-router.get('/', async (req, res, next) => {
+router.get('/', optionalAuth, async (req, res, next) => {
   try {
     const { wingId, programId, status } = req.query;
-    const auth = getRequesterAuth(req);
+    const isAdmin = Boolean(req.user?.isAdmin);
+    const isCoordinator = Boolean(req.user?.isCoordinator);
+    const assignedWing = req.user?.assignedWing || null;
 
     // Coordinators can view unpublished events for their assigned wing
-    const isCoordinatorWing = auth.isCoordinator && auth.assignedWing && (!wingId || String(wingId) === auth.assignedWing);
-    const isPublic = !auth.isAdmin && !isCoordinatorWing;
+    const isCoordinatorWing = isCoordinator && assignedWing && (!wingId || String(wingId) === assignedWing);
+    const isPublic = !isAdmin && !isCoordinatorWing;
 
     const events = await Store.getEvents({
-      wingId: isCoordinatorWing && !wingId ? auth.assignedWing : wingId,
+      wingId: isCoordinatorWing && !wingId ? assignedWing : wingId,
       programId,
       status,
       isPublic
@@ -48,7 +33,7 @@ router.get('/', async (req, res, next) => {
 });
 
 // Get single event by ID (Public)
-router.get('/:id', async (req, res, next) => {
+router.get('/:id', optionalAuth, async (req, res, next) => {
   try {
     const event = await Store.getEventById(req.params.id);
     if (!event) {
@@ -56,9 +41,11 @@ router.get('/:id', async (req, res, next) => {
     }
 
     // If unauthenticated guest and event is draft/cancelled, restrict unless admin or assigned coordinator
-    const auth = getRequesterAuth(req);
-    const isAssignedCoordinator = auth.isCoordinator && auth.assignedWing && String(event.wingId?._id || event.wingId) === auth.assignedWing;
-    if (!auth.isAdmin && !isAssignedCoordinator && event.status !== 'published') {
+    const isAdmin = Boolean(req.user?.isAdmin);
+    const isCoordinator = Boolean(req.user?.isCoordinator);
+    const assignedWing = req.user?.assignedWing || null;
+    const isAssignedCoordinator = isCoordinator && assignedWing && String(event.wingId?._id || event.wingId) === assignedWing;
+    if (!isAdmin && !isAssignedCoordinator && event.status !== 'published') {
       return res.status(404).json({ error: 'Event not found' });
     }
 
@@ -338,7 +325,7 @@ router.get('/:id/my-registration', verifyToken, async (req, res, next) => {
 });
 
 // Register current user for an event (Authenticated Member/Volunteer/User)
-router.post('/:id/register', verifyToken, async (req, res, next) => {
+router.post('/:id/register', publicSubmitLimiter, verifyToken, async (req, res, next) => {
   try {
     const event = await Store.getEventById(req.params.id);
     if (!event) {

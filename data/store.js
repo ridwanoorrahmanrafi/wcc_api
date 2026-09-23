@@ -16,6 +16,7 @@ import Program from '../models/Program.js';
 import Event from '../models/Event.js';
 import Issue from '../models/Issue.js';
 import EventRegistration from '../models/EventRegistration.js';
+import Notification from '../models/Notification.js';
 import bcrypt from 'bcryptjs';
 
 // Empty in-memory fallback cache (used only if MongoDB is offline)
@@ -36,7 +37,8 @@ const memoryStore = {
   programs: [],
   events: [],
   issues: [],
-  eventRegistrations: []
+  eventRegistrations: [],
+  notifications: []
 };
 
 export const Store = {
@@ -593,6 +595,7 @@ export const Store = {
       if (updateData.district !== undefined) memberFields.district = updateData.district;
       if (updateData.profession !== undefined) memberFields.profession = updateData.profession;
       if (updateData.photoUrl !== undefined) memberFields.photoUrl = updateData.photoUrl;
+      if (updateData.volunteerWing !== undefined) memberFields.wing = updateData.volunteerWing;
 
       if (Object.keys(memberFields).length > 0) {
         await this.updateMember(updated.memberId, memberFields).catch(err => {
@@ -1406,6 +1409,180 @@ export const Store = {
       totalVolunteers,
       resolvedIssues
     };
+  },
+
+  // Notifications & Role Invitations
+  async createNotification(data) {
+    if (isDatabaseConnected()) {
+      let recipientUserId = data.recipientUserId || null;
+      if (!recipientUserId && (data.recipientEmail || data.recipientMemberId)) {
+        const u = await User.findOne({
+          $or: [
+            ...(data.recipientEmail ? [{ email: data.recipientEmail.toLowerCase() }] : []),
+            ...(data.recipientMemberId ? [{ memberId: data.recipientMemberId }] : [])
+          ]
+        });
+        if (u) recipientUserId = u._id;
+      }
+
+      const notif = new Notification({
+        ...data,
+        recipientUserId,
+        recipientEmail: (data.recipientEmail || '').toLowerCase()
+      });
+      return await notif.save();
+    }
+
+    const newNotif = {
+      _id: String(Date.now()),
+      ...data,
+      recipientEmail: (data.recipientEmail || '').toLowerCase(),
+      createdAt: new Date(),
+      updatedAt: new Date()
+    };
+    memoryStore.notifications.push(newNotif);
+    return newNotif;
+  },
+
+  async getMyNotifications({ userId, memberId, email, status }) {
+    if (isDatabaseConnected()) {
+      const matchCriteria = [];
+      if (userId) matchCriteria.push({ recipientUserId: userId });
+      if (memberId) matchCriteria.push({ recipientMemberId: memberId });
+      if (email) matchCriteria.push({ recipientEmail: email.toLowerCase() });
+
+      if (matchCriteria.length === 0) return [];
+
+      const query = { $or: matchCriteria };
+      if (status && status !== 'all') {
+        query.status = status;
+      }
+
+      return await Notification.find(query).sort({ createdAt: -1 }).limit(50);
+    }
+
+    const s = email ? email.toLowerCase() : '';
+    return memoryStore.notifications
+      .filter(n => {
+        const match =
+          (userId && String(n.recipientUserId) === String(userId)) ||
+          (memberId && n.recipientMemberId === memberId) ||
+          (s && n.recipientEmail?.toLowerCase() === s);
+        if (!match) return false;
+        if (status && status !== 'all') return n.status === status;
+        return true;
+      })
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  },
+
+  async respondToRoleInvitation(id, { action, recipientUser }) {
+    if (isDatabaseConnected()) {
+      const notif = await Notification.findById(id);
+      if (!notif) return { error: 'Notification not found' };
+
+      const userEmail = recipientUser.email?.toLowerCase();
+      const userMemberId = recipientUser.memberId;
+      const userIdStr = String(recipientUser._id || recipientUser.id || '');
+      const notifUserStr = notif.recipientUserId ? String(notif.recipientUserId) : '';
+
+      const isMatch =
+        (notifUserStr && notifUserStr === userIdStr) ||
+        (userEmail && notif.recipientEmail?.toLowerCase() === userEmail) ||
+        (userMemberId && notif.recipientMemberId === userMemberId);
+
+      if (!isMatch && recipientUser.role !== 'admin') {
+        return { error: 'Unauthorized to respond to this invitation' };
+      }
+
+      if (notif.status !== 'pending') {
+        return { error: `Invitation has already been ${notif.status}` };
+      }
+
+      if (action === 'accept') {
+        notif.status = 'accepted';
+        notif.actionTakenAt = new Date();
+        await notif.save();
+
+        const updateFields = {
+          role: notif.targetRole
+        };
+        if (notif.targetRole === 'volunteer') {
+          if (notif.targetWing) updateFields.volunteerWing = notif.targetWing;
+        } else if (notif.targetRole === 'coordinator') {
+          if (notif.targetWingId) updateFields.assignedWing = notif.targetWingId;
+          if (notif.targetWing) updateFields.volunteerWing = notif.targetWing;
+        }
+
+        const updatedUser = await User.findOneAndUpdate(
+          {
+            $or: [
+              ...(userIdStr ? [{ _id: recipientUser._id || recipientUser.id }] : []),
+              ...(userEmail ? [{ email: userEmail }] : []),
+              ...(userMemberId ? [{ memberId: userMemberId }] : [])
+            ]
+          },
+          { $set: updateFields },
+          { new: true }
+        ).populate('assignedWing');
+
+        const memberUpdate = {};
+        if (notif.targetWing) memberUpdate.wing = notif.targetWing;
+        if (notif.targetRole === 'volunteer') memberUpdate.profession = 'Youth Volunteer';
+
+        await Member.findOneAndUpdate(
+          {
+            $or: [
+              ...(userMemberId ? [{ memberId: userMemberId }] : []),
+              ...(userEmail ? [{ email: userEmail }] : [])
+            ]
+          },
+          { $set: memberUpdate }
+        );
+
+        return { notification: notif, user: updatedUser };
+      } else if (action === 'reject') {
+        notif.status = 'rejected';
+        notif.actionTakenAt = new Date();
+        await notif.save();
+        return { notification: notif, user: recipientUser };
+      }
+
+      return { error: 'Invalid action. Must be accept or reject.' };
+    }
+
+    const idx = memoryStore.notifications.findIndex(n => String(n._id) === String(id));
+    if (idx === -1) return { error: 'Notification not found' };
+    const notif = memoryStore.notifications[idx];
+    notif.status = action === 'accept' ? 'accepted' : 'rejected';
+    notif.actionTakenAt = new Date();
+    return { notification: notif, user: recipientUser };
+  },
+
+  async getRoleInvitations({ status, targetRole, limit = 50 }) {
+    if (isDatabaseConnected()) {
+      const query = { type: 'role_invitation' };
+      if (status && status !== 'all') query.status = status;
+      if (targetRole && targetRole !== 'all') query.targetRole = targetRole;
+      return await Notification.find(query).sort({ createdAt: -1 }).limit(Number(limit));
+    }
+    return memoryStore.notifications
+      .filter(n => {
+        if (n.type !== 'role_invitation') return false;
+        if (status && status !== 'all' && n.status !== status) return false;
+        if (targetRole && targetRole !== 'all' && n.targetRole !== targetRole) return false;
+        return true;
+      })
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+      .slice(0, Number(limit));
+  },
+
+  async markNotificationRead(id) {
+    if (isDatabaseConnected()) {
+      return await Notification.findByIdAndUpdate(id, { read: true }, { new: true });
+    }
+    const notif = memoryStore.notifications.find(n => String(n._id) === String(id));
+    if (notif) notif.read = true;
+    return notif;
   }
 };
 
