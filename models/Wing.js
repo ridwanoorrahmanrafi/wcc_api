@@ -33,6 +33,11 @@ const wingSchema = new mongoose.Schema(
       type: String,
       trim: true,
       default: ''
+    },
+    leader: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null
     }
   },
   {

@@ -17,6 +17,9 @@ import Event from '../models/Event.js';
 import Issue from '../models/Issue.js';
 import EventRegistration from '../models/EventRegistration.js';
 import Notification from '../models/Notification.js';
+import Course from '../models/Course.js';
+import Book from '../models/Book.js';
+import BookRequest from '../models/BookRequest.js';
 import bcrypt from 'bcryptjs';
 
 // Empty in-memory fallback cache (used only if MongoDB is offline)
@@ -38,7 +41,10 @@ const memoryStore = {
   events: [],
   issues: [],
   eventRegistrations: [],
-  notifications: []
+  notifications: [],
+  courses: [],
+  books: [],
+  bookRequests: []
 };
 
 export const Store = {
@@ -740,7 +746,7 @@ export const Store = {
   // Wings
   async getWings() {
     if (isDatabaseConnected()) {
-      return await Wing.find({}).sort({ createdAt: 1 });
+      return await Wing.find({}).populate('leader', 'name email phone memberId photoUrl role').sort({ createdAt: 1 });
     }
     return [...memoryStore.wings].sort((a, b) => new Date(a.createdAt || 0) - new Date(b.createdAt || 0));
   },
@@ -749,7 +755,7 @@ export const Store = {
     if (!slug) return null;
     const cleanSlug = String(slug).trim().toLowerCase();
     if (isDatabaseConnected()) {
-      return await Wing.findOne({ slug: cleanSlug });
+      return await Wing.findOne({ slug: cleanSlug }).populate('leader', 'name email phone memberId photoUrl role');
     }
     return memoryStore.wings.find(w => w.slug.toLowerCase() === cleanSlug) || null;
   },
@@ -758,7 +764,7 @@ export const Store = {
     if (!id) return null;
     if (isDatabaseConnected()) {
       const isObjectId = typeof id === 'string' && /^[0-9a-fA-F]{24}$/.test(id);
-      return isObjectId ? await Wing.findById(id) : null;
+      return isObjectId ? await Wing.findById(id).populate('leader', 'name email phone memberId photoUrl role') : null;
     }
     return memoryStore.wings.find(w => String(w._id) === String(id)) || null;
   },
@@ -771,14 +777,15 @@ export const Store = {
       if (excludeId) {
         query._id = { $ne: excludeId };
       }
-      return await Wing.findOne(query);
+      return await Wing.findOne(query).populate('leader', 'name email phone memberId photoUrl role');
     }
     return memoryStore.wings.find(w => w.slug.toLowerCase() === cleanSlug && String(w._id) !== String(excludeId)) || null;
   },
 
   async createWing(data) {
     if (isDatabaseConnected()) {
-      return await Wing.create(data);
+      const created = await Wing.create(data);
+      return await Wing.findById(created._id).populate('leader', 'name email phone memberId photoUrl role');
     }
     const newWing = {
       _id: 'wing_' + Date.now(),
@@ -788,6 +795,7 @@ export const Store = {
       description: data.description || '',
       missionPoints: Array.isArray(data.missionPoints) ? data.missionPoints : [],
       coverImage: data.coverImage || '',
+      leader: data.leader || null,
       createdAt: new Date(),
       updatedAt: new Date()
     };
@@ -799,7 +807,7 @@ export const Store = {
     if (!id) return null;
     if (isDatabaseConnected()) {
       const isObjectId = typeof id === 'string' && /^[0-9a-fA-F]{24}$/.test(id);
-      return isObjectId ? await Wing.findByIdAndUpdate(id, data, { new: true, runValidators: true }) : null;
+      return isObjectId ? await Wing.findByIdAndUpdate(id, data, { new: true, runValidators: true }).populate('leader', 'name email phone memberId photoUrl role') : null;
     }
     const idx = memoryStore.wings.findIndex(w => String(w._id) === String(id));
     if (idx !== -1) {
@@ -807,6 +815,46 @@ export const Store = {
       return memoryStore.wings[idx];
     }
     return null;
+  },
+
+  async assignWingLeader(wingId, userId) {
+    if (!wingId) return null;
+    if (isDatabaseConnected()) {
+      const wing = await Wing.findById(wingId);
+      if (!wing) return null;
+
+      let leaderUser = null;
+      if (userId) {
+        leaderUser = await User.findById(userId);
+        if (!leaderUser) return null;
+
+        // Upgrade/set user role & assigned wing
+        leaderUser.role = 'wing_leader';
+        leaderUser.assignedWing = wing._id;
+        leaderUser.volunteerWing = `${wing.nameBn} (${wing.nameEn})`;
+        await leaderUser.save();
+      }
+
+      wing.leader = leaderUser ? leaderUser._id : null;
+      await wing.save();
+      return await Wing.findById(wing._id).populate('leader', 'name email phone memberId photoUrl role');
+    }
+
+    const wingIdx = memoryStore.wings.findIndex(w => String(w._id) === String(wingId));
+    if (wingIdx === -1) return null;
+
+    let leaderObj = null;
+    if (userId) {
+      const userIdx = memoryStore.users.findIndex(u => String(u._id) === String(userId));
+      if (userIdx !== -1) {
+        memoryStore.users[userIdx].role = 'wing_leader';
+        memoryStore.users[userIdx].assignedWing = memoryStore.wings[wingIdx]._id;
+        leaderObj = memoryStore.users[userIdx];
+      }
+    }
+
+    memoryStore.wings[wingIdx].leader = leaderObj;
+    return memoryStore.wings[wingIdx];
   },
 
   async deleteWing(id) {
@@ -1583,6 +1631,295 @@ export const Store = {
     const notif = memoryStore.notifications.find(n => String(n._id) === String(id));
     if (notif) notif.read = true;
     return notif;
+  },
+
+  // =========================================================================
+  // EDUCATION WING: FREE COURSES
+  // =========================================================================
+  async getCourses({ wingSlug = 'education', category, status } = {}) {
+    if (isDatabaseConnected()) {
+      const query = {};
+      if (status && status !== 'all') {
+        query.status = status;
+      }
+      if (category && category !== 'All') {
+        query.category = category;
+      }
+      return await Course.find(query)
+        .populate('wing', 'nameEn nameBn slug')
+        .populate('createdBy', 'name email role')
+        .sort({ createdAt: -1 });
+    }
+
+    let list = [...memoryStore.courses];
+    if (status && status !== 'all') {
+      list = list.filter(c => c.status === status);
+    }
+    if (category && category !== 'All') {
+      list = list.filter(c => c.category === category);
+    }
+    return list;
+  },
+
+  async getCourseById(id) {
+    if (!id) return null;
+    if (isDatabaseConnected()) {
+      const isObjectId = typeof id === 'string' && /^[0-9a-fA-F]{24}$/.test(id);
+      return isObjectId
+        ? await Course.findById(id).populate('wing', 'nameEn nameBn slug').populate('enrolledMembers', 'name email memberId')
+        : await Course.findOne({ slug: id }).populate('wing', 'nameEn nameBn slug').populate('enrolledMembers', 'name email memberId');
+    }
+    return memoryStore.courses.find(c => String(c._id) === String(id) || c.slug === id) || null;
+  },
+
+  async createCourse(data) {
+    if (isDatabaseConnected()) {
+      const created = await Course.create(data);
+      return await Course.findById(created._id).populate('wing', 'nameEn nameBn slug');
+    }
+    const newCourse = {
+      _id: 'course_' + Date.now(),
+      ...data,
+      enrolledMembers: [],
+      createdAt: new Date(),
+      updatedAt: new Date()
+    };
+    memoryStore.courses.unshift(newCourse);
+    return newCourse;
+  },
+
+  async updateCourse(id, data) {
+    if (!id) return null;
+    if (isDatabaseConnected()) {
+      const isObjectId = typeof id === 'string' && /^[0-9a-fA-F]{24}$/.test(id);
+      return isObjectId
+        ? await Course.findByIdAndUpdate(id, data, { new: true, runValidators: true }).populate('wing', 'nameEn nameBn slug')
+        : null;
+    }
+    const idx = memoryStore.courses.findIndex(c => String(c._id) === String(id));
+    if (idx !== -1) {
+      memoryStore.courses[idx] = { ...memoryStore.courses[idx], ...data, updatedAt: new Date() };
+      return memoryStore.courses[idx];
+    }
+    return null;
+  },
+
+  async deleteCourse(id) {
+    if (!id) return null;
+    if (isDatabaseConnected()) {
+      const isObjectId = typeof id === 'string' && /^[0-9a-fA-F]{24}$/.test(id);
+      return isObjectId ? await Course.findByIdAndDelete(id) : null;
+    }
+    const idx = memoryStore.courses.findIndex(c => String(c._id) === String(id));
+    if (idx !== -1) {
+      const removed = memoryStore.courses.splice(idx, 1);
+      return removed[0];
+    }
+    return null;
+  },
+
+  async enrollCourse(courseId, userId) {
+    if (!courseId || !userId) return null;
+    if (isDatabaseConnected()) {
+      const course = await Course.findById(courseId);
+      if (!course) return { error: 'Course not found' };
+
+      const alreadyEnrolled = course.enrolledMembers.some(uId => String(uId) === String(userId));
+      if (!alreadyEnrolled) {
+        course.enrolledMembers.push(userId);
+        await course.save();
+      }
+      return { success: true, alreadyEnrolled, course };
+    }
+
+    const course = memoryStore.courses.find(c => String(c._id) === String(courseId));
+    if (!course) return { error: 'Course not found' };
+    course.enrolledMembers = course.enrolledMembers || [];
+    const alreadyEnrolled = course.enrolledMembers.some(uId => String(uId) === String(userId));
+    if (!alreadyEnrolled) {
+      course.enrolledMembers.push(userId);
+    }
+    return { success: true, alreadyEnrolled, course };
+  },
+
+  // =========================================================================
+  // EDUCATION WING: BOOK DONATIONS
+  // =========================================================================
+  async getBooks({ status, category, search } = {}) {
+    if (isDatabaseConnected()) {
+      const query = {};
+      if (status && status !== 'all') {
+        query.status = status;
+      }
+      if (category && category !== 'All') {
+        query.category = category;
+      }
+      if (search) {
+        query.$or = [
+          { title: { $regex: search, $options: 'i' } },
+          { author: { $regex: search, $options: 'i' } },
+          { pickupLocation: { $regex: search, $options: 'i' } }
+        ];
+      }
+      return await Book.find(query).populate('approvedBy', 'name email role').sort({ createdAt: -1 });
+    }
+
+    let list = [...memoryStore.books];
+    if (status && status !== 'all') {
+      list = list.filter(b => b.status === status);
+    }
+    if (category && category !== 'All') {
+      list = list.filter(b => b.category === category);
+    }
+    if (search) {
+      const s = search.toLowerCase();
+      list = list.filter(
+        b =>
+          b.title?.toLowerCase().includes(s) ||
+          b.author?.toLowerCase().includes(s) ||
+          b.pickupLocation?.toLowerCase().includes(s)
+      );
+    }
+    return list;
+  },
+
+  async getBookById(id) {
+    if (!id) return null;
+    if (isDatabaseConnected()) {
+      const isObjectId = typeof id === 'string' && /^[0-9a-fA-F]{24}$/.test(id);
+      return isObjectId ? await Book.findById(id).populate('approvedBy', 'name email') : null;
+    }
+    return memoryStore.books.find(b => String(b._id) === String(id)) || null;
+  },
+
+  async createBook(data) {
+    if (isDatabaseConnected()) {
+      return await Book.create(data);
+    }
+    const newBook = {
+      _id: 'book_' + Date.now(),
+      ...data,
+      status: data.status || 'pending',
+      createdAt: new Date(),
+      updatedAt: new Date()
+    };
+    memoryStore.books.unshift(newBook);
+    return newBook;
+  },
+
+  async getMyBookDonations(userId) {
+    if (!userId) return [];
+    if (isDatabaseConnected()) {
+      return await Book.find({ 'donor.userId': userId }).sort({ createdAt: -1 });
+    }
+    return memoryStore.books.filter(b => String(b.donor?.userId) === String(userId));
+  },
+
+  async updateBookStatus(id, { status, rejectionReason = '', approvedBy = null }) {
+    if (!id) return null;
+    const updateData = {
+      status,
+      rejectionReason: status === 'rejected' ? rejectionReason : '',
+      approvedBy: status === 'approved' ? approvedBy : null,
+      approvedAt: status === 'approved' ? new Date() : null
+    };
+
+    if (isDatabaseConnected()) {
+      const isObjectId = typeof id === 'string' && /^[0-9a-fA-F]{24}$/.test(id);
+      return isObjectId
+        ? await Book.findByIdAndUpdate(id, { $set: updateData }, { new: true })
+        : null;
+    }
+
+    const idx = memoryStore.books.findIndex(b => String(b._id) === String(id));
+    if (idx !== -1) {
+      memoryStore.books[idx] = {
+        ...memoryStore.books[idx],
+        ...updateData,
+        updatedAt: new Date()
+      };
+      return memoryStore.books[idx];
+    }
+    return null;
+  },
+
+  // =========================================================================
+  // EDUCATION WING: BOOK REQUESTS
+  // =========================================================================
+  async createBookRequest(data) {
+    if (isDatabaseConnected()) {
+      const created = await BookRequest.create(data);
+      return await BookRequest.findById(created._id).populate('book');
+    }
+    const book = memoryStore.books.find(b => String(b._id) === String(data.book));
+    const newReq = {
+      _id: 'req_' + Date.now(),
+      ...data,
+      book: book || data.book,
+      status: 'pending',
+      createdAt: new Date(),
+      updatedAt: new Date()
+    };
+    memoryStore.bookRequests.unshift(newReq);
+    return newReq;
+  },
+
+  async getBookRequests({ status } = {}) {
+    if (isDatabaseConnected()) {
+      const query = {};
+      if (status && status !== 'all') {
+        query.status = status;
+      }
+      return await BookRequest.find(query)
+        .populate('book')
+        .populate('reviewedBy', 'name email role')
+        .sort({ createdAt: -1 });
+    }
+
+    let list = [...memoryStore.bookRequests];
+    if (status && status !== 'all') {
+      list = list.filter(r => r.status === status);
+    }
+    return list;
+  },
+
+  async getMyBookRequests(userId) {
+    if (!userId) return [];
+    if (isDatabaseConnected()) {
+      return await BookRequest.find({ 'requester.userId': userId })
+        .populate('book')
+        .sort({ createdAt: -1 });
+    }
+    return memoryStore.bookRequests.filter(r => String(r.requester?.userId) === String(userId));
+  },
+
+  async updateBookRequestStatus(id, { status, rejectionReason = '', adminNotes = '', reviewedBy = null }) {
+    if (!id) return null;
+    const updateData = {
+      status,
+      rejectionReason: status === 'rejected' ? rejectionReason : '',
+      adminNotes: adminNotes || '',
+      reviewedBy,
+      reviewedAt: new Date()
+    };
+
+    if (isDatabaseConnected()) {
+      const isObjectId = typeof id === 'string' && /^[0-9a-fA-F]{24}$/.test(id);
+      return isObjectId
+        ? await BookRequest.findByIdAndUpdate(id, { $set: updateData }, { new: true }).populate('book')
+        : null;
+    }
+
+    const idx = memoryStore.bookRequests.findIndex(r => String(r._id) === String(id));
+    if (idx !== -1) {
+      memoryStore.bookRequests[idx] = {
+        ...memoryStore.bookRequests[idx],
+        ...updateData,
+        updatedAt: new Date()
+      };
+      return memoryStore.bookRequests[idx];
+    }
+    return null;
   }
 };
 

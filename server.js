@@ -12,6 +12,7 @@ import eventRoutes from './routes/eventRoutes.js';
 import issueRoutes from './routes/issueRoutes.js';
 import statsRoutes from './routes/statsRoutes.js';
 import notificationRoutes from './routes/notificationRoutes.js';
+import educationRoutes from './routes/educationRoutes.js';
 
 // Load environment variables
 dotenv.config();
@@ -90,6 +91,7 @@ app.use('/api/events', eventRoutes);
 app.use('/api/issues', issueRoutes);
 app.use('/api/stats', statsRoutes);
 app.use('/api/notifications', notificationRoutes);
+app.use('/api/education', educationRoutes);
 
 // 404 Handler
 app.use((req, res) => {

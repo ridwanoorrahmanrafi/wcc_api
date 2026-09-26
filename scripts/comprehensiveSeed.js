@@ -40,8 +40,8 @@ export const runComprehensiveSeed = async () => {
       nameEn: 'Education',
       nameBn: 'শিক্ষা উইং',
       slug: 'education',
-      description: 'মেধাবী ও অসচ্ছল শিক্ষার্থীদের শিক্ষাবৃত্তি, ডিজিটাল সাক্ষরতা ও ক্যারিয়ার মেন্টরশিপ।',
-      missionPoints: ['Quality Education for All', 'Student Scholarships', 'Digital Literacy Camps'],
+      description: 'মেধাবী ও অসচ্ছল শিক্ষার্থীদের শিক্ষাবৃত্তি, ফ্রি স্কিল কোর্স, বই অনুদান ও ক্যারিয়ার মেন্টরশিপ।',
+      missionPoints: ['Free Member Courses', 'Book Donation & Library', 'Quality Education for All'],
       coverImage: 'https://images.unsplash.com/photo-1503676260728-1c00da094a0b?auto=format&fit=crop&q=80&w=800'
     },
     {
@@ -61,20 +61,20 @@ export const runComprehensiveSeed = async () => {
       coverImage: 'https://images.unsplash.com/photo-1461896836934-ffe607ba8211?auto=format&fit=crop&q=80&w=800'
     },
     {
-      nameEn: 'Culture',
+      nameEn: 'Cultural',
       nameBn: 'সংস্কৃতি উইং',
-      slug: 'culture',
+      slug: 'cultural',
       description: 'বাঙালি সংস্কৃতি, ভাষা আন্দোলন ও মুক্তিযুদ্ধের সঠিক ইতিহাস চর্চা, সাহিত্য সম্মেলন ও সৃজনশীল নাট্যকর্ম।',
       missionPoints: ['Cultural Festivals & Exhibitions', 'Creative Arts Workshops', 'Youth Literary Circles'],
       coverImage: 'https://images.unsplash.com/photo-1460723237483-7a6dc9d0b212?auto=format&fit=crop&q=80&w=800'
     },
     {
-      nameEn: 'Heritage',
-      nameBn: 'ঐতিহ্য উইং',
-      slug: 'heritage',
-      description: 'সুগন্ধা নদী বিধৌত ঝালকাঠির ঐতিহ্যবাহী প্রত্নতাত্ত্বিক নিদর্শন সংরক্ষণ, বৃক্ষরোপণ ও পরিবেশ সুরক্ষা।',
-      missionPoints: ['Historical Site Preservation', 'Oral History Archiving', 'Community Heritage Walks'],
-      coverImage: 'https://images.unsplash.com/photo-1569949381669-ecf31ae8e613?auto=format&fit=crop&q=80&w=800'
+      nameEn: 'Environment',
+      nameBn: 'পরিবেশ উইং',
+      slug: 'environment',
+      description: 'সুগন্ধা নদী রক্ষা, ব্যাপক বৃক্ষরোপণ, বর্জ্য নিষ্কাশন ও প্লাস্টিক দূষণ রোধে তরুণদের পরিবেশ আন্দোলন।',
+      missionPoints: ['Tree Plantation Drives', 'River Cleanliness & Conservation', 'Plastic Recycling & Awareness'],
+      coverImage: 'https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?auto=format&fit=crop&q=80&w=800'
     }
   ];
 

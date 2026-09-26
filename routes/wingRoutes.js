@@ -112,6 +112,35 @@ router.put('/:id', verifyToken, requireAdmin, async (req, res, next) => {
   }
 });
 
+// Assign or remove leader for a wing (Admin only)
+router.patch('/:id/leader', verifyToken, requireAdmin, async (req, res, next) => {
+  try {
+    const { leaderId } = req.body;
+    const updated = await Store.assignWingLeader(req.params.id, leaderId || null);
+    if (!updated) {
+      return res.status(404).json({ error: 'Wing or User not found' });
+    }
+
+    await Store.addAuditLog({
+      user: req.user?.name || req.user?.email || 'Admin',
+      role: req.user?.role || 'admin',
+      action: 'ASSIGN_WING_LEADER',
+      module: 'Wings',
+      recordId: updated.slug || String(updated._id),
+      details: leaderId
+        ? `Assigned ${updated.leader?.name || leaderId} as Wing Leader for ${updated.nameEn}`
+        : `Removed Wing Leader for ${updated.nameEn}`
+    });
+
+    res.json({
+      message: leaderId ? 'Wing leader assigned successfully' : 'Wing leader removed successfully',
+      wing: updated
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // Delete wing by id (Admin only)
 router.delete('/:id', verifyToken, requireAdmin, async (req, res, next) => {
   try {

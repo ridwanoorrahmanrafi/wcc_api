@@ -22,7 +22,7 @@ const userSchema = new mongoose.Schema(
     },
     role: {
       type: String,
-      enum: ['admin', 'finance_officer', 'coordinator', 'member', 'volunteer'],
+      enum: ['admin', 'finance_officer', 'coordinator', 'wing_leader', 'member', 'volunteer'],
       default: 'member'
     },
     assignedWing: {
